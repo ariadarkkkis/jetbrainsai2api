@@ -69,3 +69,4 @@ coverage.xml
 ehthumbs.db
 Thumbs.db
 .claude/settings.local.json
+.env.test

@@ -278,31 +278,51 @@
                 
                 // 更新概览数据
                 document.getElementById('currentTime').textContent = data.currentTime;
-                document.getElementById('currentQPS').textContent = data.currentQPS;
+                document.getElementById('currentQPS').textContent = parseFloat(data.currentQPS).toFixed(1);
                 document.getElementById('totalRecords').textContent = data.totalRecords;
                 
                 // 更新24小时统计
                 document.getElementById('stats24h-requests').innerHTML = '<strong>' + data.stats24h.requests + '</strong>';
                 document.getElementById('stats24h-successRate').innerHTML = '<strong>' + data.stats24h.successRate.toFixed(2) + '%</strong>';
-                document.getElementById('stats24h-avgResponseTime').innerHTML = '<strong>' + data.stats24h.avgResponseTime + ' ms</strong>';
-                document.getElementById('stats24h-qps').innerHTML = '<strong>' + data.stats24h.qps.toFixed(2) + '</strong>';
+                document.getElementById('stats24h-avgResponseTime').innerHTML = '<strong>' + (data.stats24h.avgResponseTime / 1000).toFixed(2) + ' 秒</strong>';
+                document.getElementById('stats24h-qps').innerHTML = '<strong>' + data.stats24h.qps.toFixed(1) + '</strong>';
                 
                 // 更新7天统计
                 document.getElementById('stats7d-requests').innerHTML = '<strong>' + data.stats7d.requests + '</strong>';
                 document.getElementById('stats7d-successRate').innerHTML = '<strong>' + data.stats7d.successRate.toFixed(2) + '%</strong>';
-                document.getElementById('stats7d-avgResponseTime').innerHTML = '<strong>' + data.stats7d.avgResponseTime + ' ms</strong>';
-                document.getElementById('stats7d-qps').innerHTML = '<strong>' + data.stats7d.qps.toFixed(2) + '</strong>';
+                document.getElementById('stats7d-avgResponseTime').innerHTML = '<strong>' + (data.stats7d.avgResponseTime / 1000).toFixed(2) + ' 秒</strong>';
+                document.getElementById('stats7d-qps').innerHTML = '<strong>' + data.stats7d.qps.toFixed(1) + '</strong>';
                 
                 // 更新30天统计
                 document.getElementById('stats30d-requests').innerHTML = '<strong>' + data.stats30d.requests + '</strong>';
                 document.getElementById('stats30d-successRate').innerHTML = '<strong>' + data.stats30d.successRate.toFixed(2) + '%</strong>';
-                document.getElementById('stats30d-avgResponseTime').innerHTML = '<strong>' + data.stats30d.avgResponseTime + ' ms</strong>';
-                document.getElementById('stats30d-qps').innerHTML = '<strong>' + data.stats30d.qps.toFixed(2) + '</strong>';
+                document.getElementById('stats30d-avgResponseTime').innerHTML = '<strong>' + (data.stats30d.avgResponseTime / 1000).toFixed(2) + ' 秒</strong>';
+                document.getElementById('stats30d-qps').innerHTML = '<strong>' + data.stats30d.qps.toFixed(1) + '</strong>';
                 
                 // 更新Token配额表
                 const tokensTable = document.getElementById('tokensTable');
                 tokensTable.innerHTML = '';
                 data.tokensInfo.forEach(token => {
+                    // 格式化有效期显示为 YYYY-MM-DD HH:mm:ss 格式
+                    let formattedExpiryDate = token.expiryDate;
+                    if (token.expiryDate && token.expiryDate !== '') {
+                        try {
+                            // 如果是 2006/1/2 14:30:20 格式，转换为 2025-06-12 14:59:59 格式
+                            const date = new Date(token.expiryDate.replace(/\//g, '-'));
+                            if (!isNaN(date.getTime())) {
+                                formattedExpiryDate = date.getFullYear() + '-' + 
+                                                    String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                                                    String(date.getDate()).padStart(2, '0') + ' ' + 
+                                                    String(date.getHours()).padStart(2, '0') + ':' + 
+                                                    String(date.getMinutes()).padStart(2, '0') + ':' + 
+                                                    String(date.getSeconds()).padStart(2, '0');
+                            }
+                        } catch (e) {
+                            // 如果解析失败，保持原始格式
+                            console.warn('Failed to parse date:', token.expiryDate);
+                        }
+                    }
+                    
                     const row = tokensTable.insertRow();
                     row.innerHTML = `
                         <td>${token.name}</td>
@@ -310,7 +330,7 @@
                         <td>${token.used.toFixed(3)}</td>
                         <td>${token.total.toFixed(0)}</td>
                         <td>${token.usageRate.toFixed(2)}%</td>
-                        <td>${token.expiryDate}</td>
+                        <td>${formattedExpiryDate}</td>
                         <td><span class="status-active">${token.status}</span></td>
                     `;
                 });
