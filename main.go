@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -62,8 +61,8 @@ type RequestRecord struct {
 
 type PeriodStats struct {
 	Requests        int64   `json:"requests"`
-	SuccessRate     float64 `json:"success_rate"`
-	AvgResponseTime int64   `json:"avg_response_time"`
+	SuccessRate     float64 `json:"successRate"`
+	AvgResponseTime int64   `json:"avgResponseTime"`
 	QPS             float64 `json:"qps"`
 }
 
@@ -86,12 +85,13 @@ type JWTClaims struct {
 
 // Data structures
 type JetbrainsAccount struct {
-	LicenseID      string  `json:"licenseId,omitempty"`
-	Authorization  string  `json:"authorization,omitempty"`
-	JWT            string  `json:"jwt,omitempty"`
-	LastUpdated    float64 `json:"last_updated"`
-	HasQuota       bool    `json:"has_quota"`
-	LastQuotaCheck float64 `json:"last_quota_check"`
+	LicenseID      string    `json:"licenseId,omitempty"`
+	Authorization  string    `json:"authorization,omitempty"`
+	JWT            string    `json:"jwt,omitempty"`
+	LastUpdated    float64   `json:"last_updated"`
+	HasQuota       bool      `json:"has_quota"`
+	LastQuotaCheck float64   `json:"last_quota_check"`
+	ExpiryTime     time.Time `json:"expiry_time"`
 }
 
 type ModelInfo struct {
@@ -116,10 +116,10 @@ type ModelsConfig struct {
 }
 
 type ChatMessage struct {
-	Role       string      `json:"role"`
-	Content    interface{} `json:"content,omitempty"`
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID string      `json:"tool_call_id,omitempty"`
+	Role       string     `json:"role"`
+	Content    any        `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type ToolCall struct {
@@ -141,7 +141,7 @@ type ChatCompletionRequest struct {
 	MaxTokens   *int          `json:"max_tokens,omitempty"`
 	TopP        *float64      `json:"top_p,omitempty"`
 	Tools       []Tool        `json:"tools,omitempty"`
-	Stop        interface{}   `json:"stop,omitempty"`
+	Stop        any           `json:"stop,omitempty"`
 	ServiceTier string        `json:"service_tier,omitempty"`
 }
 
@@ -151,9 +151,9 @@ type Tool struct {
 }
 
 type ToolFunction struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters"`
 }
 
 type ChatCompletionChoice struct {
@@ -172,9 +172,9 @@ type ChatCompletionResponse struct {
 }
 
 type StreamChoice struct {
-	Delta        map[string]interface{} `json:"delta"`
-	Index        int                    `json:"index"`
-	FinishReason *string                `json:"finish_reason"`
+	Delta        map[string]any `json:"delta"`
+	Index        int            `json:"index"`
+	FinishReason *string        `json:"finish_reason"`
 }
 
 type StreamResponse struct {
@@ -187,30 +187,30 @@ type StreamResponse struct {
 
 // Anthropic compatible structures
 type AnthropicContentBlock struct {
-	Type      string                 `json:"type"`
-	Text      string                 `json:"text,omitempty"`
-	ToolUseID string                 `json:"tool_use_id,omitempty"`
-	Content   interface{}            `json:"content,omitempty"`
-	ID        string                 `json:"id,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Input     map[string]interface{} `json:"input,omitempty"`
+	Type      string         `json:"type"`
+	Text      string         `json:"text,omitempty"`
+	ToolUseID string         `json:"tool_use_id,omitempty"`
+	Content   any            `json:"content,omitempty"`
+	ID        string         `json:"id,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Input     map[string]any `json:"input,omitempty"`
 }
 
 type AnthropicMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+	Role    string `json:"role"`
+	Content any    `json:"content"`
 }
 
 type AnthropicTool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	InputSchema map[string]interface{} `json:"input_schema"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema"`
 }
 
 type AnthropicMessageRequest struct {
 	Model         string             `json:"model"`
 	Messages      []AnthropicMessage `json:"messages"`
-	System        interface{}        `json:"system,omitempty"`
+	System        any                `json:"system,omitempty"`
 	MaxTokens     int                `json:"max_tokens"`
 	Stream        bool               `json:"stream"`
 	Temperature   *float64           `json:"temperature,omitempty"`
@@ -225,11 +225,11 @@ type AnthropicUsage struct {
 }
 
 type AnthropicResponseContent struct {
-	Type  string                 `json:"type"`
-	ID    string                 `json:"id,omitempty"`
-	Name  string                 `json:"name,omitempty"`
-	Input map[string]interface{} `json:"input,omitempty"`
-	Text  string                 `json:"text,omitempty"`
+	Type  string         `json:"type"`
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
+	Text  string         `json:"text,omitempty"`
 }
 
 type AnthropicResponseMessage struct {
@@ -370,9 +370,8 @@ func loadJetbrainsAccounts() {
 	// 从环境变量加载账户信息
 	licenseIDsEnv := os.Getenv("JETBRAINS_LICENSE_IDS")
 	authorizationsEnv := os.Getenv("JETBRAINS_AUTHORIZATIONS")
-	jwtsEnv := os.Getenv("JETBRAINS_JWTS")
 
-	var licenseIDs, authorizations, jwts []string
+	var licenseIDs, authorizations []string
 
 	if licenseIDsEnv != "" {
 		licenseIDs = strings.Split(licenseIDsEnv, ",")
@@ -388,20 +387,10 @@ func loadJetbrainsAccounts() {
 		}
 	}
 
-	if jwtsEnv != "" {
-		jwts = strings.Split(jwtsEnv, ",")
-		for i, jwt := range jwts {
-			jwts[i] = strings.TrimSpace(jwt)
-		}
-	}
-
 	// 确保所有数组长度一致
 	maxLen := len(licenseIDs)
 	if len(authorizations) > maxLen {
 		maxLen = len(authorizations)
-	}
-	if len(jwts) > maxLen {
-		maxLen = len(jwts)
 	}
 
 	// 扩展数组到相同长度
@@ -411,29 +400,17 @@ func loadJetbrainsAccounts() {
 	for len(authorizations) < maxLen {
 		authorizations = append(authorizations, "")
 	}
-	for len(jwts) < maxLen {
-		jwts = append(jwts, "")
-	}
 
 	jetbrainsAccounts = []JetbrainsAccount{}
 	for i := 0; i < maxLen; i++ {
-		if licenseIDs[i] != "" || authorizations[i] != "" || jwts[i] != "" {
+		if licenseIDs[i] != "" && authorizations[i] != "" {
 			account := JetbrainsAccount{
 				LicenseID:      licenseIDs[i],
 				Authorization:  authorizations[i],
-				JWT:            jwts[i],
+				JWT:            "",
 				LastUpdated:    0,
 				HasQuota:       true,
 				LastQuotaCheck: 0,
-			}
-			if account.LicenseID == "" {
-				account.LicenseID = ""
-			}
-			if account.Authorization == "" {
-				account.Authorization = ""
-			}
-			if account.JWT == "" {
-				account.JWT = ""
 			}
 			jetbrainsAccounts = append(jetbrainsAccounts, account)
 		}
@@ -549,7 +526,7 @@ func checkQuota(account *JetbrainsAccount) error {
 		return fmt.Errorf("quota check failed with status %d", resp.StatusCode)
 	}
 
-	var quotaData map[string]interface{}
+	var quotaData map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
 		account.HasQuota = false
 		return err
@@ -564,6 +541,19 @@ func checkQuota(account *JetbrainsAccount) error {
 	account.HasQuota = dailyUsed < dailyTotal
 	if !account.HasQuota {
 		log.Printf("Account %s has no quota", getAccountIdentifier(account))
+	}
+
+	// 从配额数据中提取过期时间
+	if untilStr, ok := quotaData["until"].(string); ok {
+		parsedTime, err := time.Parse(time.RFC3339Nano, untilStr)
+		if err != nil {
+			parsedTime, err = time.Parse(time.RFC3339, untilStr)
+		}
+		if err == nil {
+			account.ExpiryTime = parsedTime
+		} else {
+			log.Printf("Warning: could not parse 'until' date '%s' for account %s: %v", untilStr, getAccountIdentifier(account), err)
+		}
 	}
 
 	account.LastQuotaCheck = float64(time.Now().Unix())
@@ -602,7 +592,7 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 		return fmt.Errorf("JWT refresh failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return err
 	}
@@ -673,7 +663,7 @@ func getAccountIdentifier(account *JetbrainsAccount) string {
 	return "with static JWT"
 }
 
-func extractTextContent(content interface{}) string {
+func extractTextContent(content any) string {
 	if content == nil {
 		return ""
 	}
@@ -681,10 +671,10 @@ func extractTextContent(content interface{}) string {
 	switch v := content.(type) {
 	case string:
 		return v
-	case []interface{}:
+	case []any:
 		var textParts []string
 		for _, item := range v {
-			if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap, ok := item.(map[string]any); ok {
 				if itemType, ok := itemMap["type"].(string); ok && itemType == "text" {
 					if text, ok := itemMap["text"].(string); ok {
 						textParts = append(textParts, text)
@@ -749,6 +739,21 @@ func getQuotaData(account *JetbrainsAccount) (gin.H, error) {
 		return nil, err
 	}
 
+	// Extract expiration from 'until' field
+	if untilStr, ok := quotaData["until"].(string); ok {
+		// Try parsing with a few common formats
+		parsedTime, err := time.Parse(time.RFC3339Nano, untilStr)
+		if err != nil {
+			parsedTime, err = time.Parse(time.RFC3339, untilStr)
+		}
+		if err == nil {
+			quotaData["expiryTime"] = parsedTime
+			account.ExpiryTime = parsedTime // 同时更新账户的过期时间
+		} else {
+			log.Printf("Warning: could not parse 'until' date '%s' from quota response: %v", untilStr, err)
+		}
+	}
+
 	// Debug: 打印API响应数据
 	if gin.Mode() == gin.DebugMode {
 		quotaJSON, _ := json.MarshalIndent(quotaData, "", "  ")
@@ -759,9 +764,9 @@ func getQuotaData(account *JetbrainsAccount) (gin.H, error) {
 	var dailyUsed, dailyTotal float64
 
 	// Extract from the nested structure
-	if current, ok := quotaData["current"].(map[string]interface{}); ok {
+	if current, ok := quotaData["current"].(map[string]any); ok {
 		// Get used amount
-		if currentUsage, ok := current["current"].(map[string]interface{}); ok {
+		if currentUsage, ok := current["current"].(map[string]any); ok {
 			if amountStr, ok := currentUsage["amount"].(string); ok {
 				if parsed, err := strconv.ParseFloat(amountStr, 64); err == nil {
 					dailyUsed = parsed
@@ -770,7 +775,7 @@ func getQuotaData(account *JetbrainsAccount) (gin.H, error) {
 		}
 
 		// Get maximum amount
-		if maximum, ok := current["maximum"].(map[string]interface{}); ok {
+		if maximum, ok := current["maximum"].(map[string]any); ok {
 			if amountStr, ok := maximum["amount"].(string); ok {
 				if parsed, err := strconv.ParseFloat(amountStr, 64); err == nil {
 					dailyTotal = parsed
@@ -794,18 +799,38 @@ func getQuotaData(account *JetbrainsAccount) (gin.H, error) {
 }
 
 func showStatsPage(c *gin.Context) {
+	// 提供静态HTML文件
+	c.File("./static/index.html")
+}
+
+// 新增JSON API端点返回统计数据
+func getStatsData(c *gin.Context) {
 	// 获取Token信息
-	var tokensInfo []TokenInfo
+	var tokensInfo []gin.H
 	for i := range jetbrainsAccounts {
 		tokenInfo, err := getTokenInfoFromAccount(&jetbrainsAccounts[i])
 		if err != nil {
 			log.Printf("Error getting token info for account %d: %v", i, err)
-			tokenInfo = &TokenInfo{
-				Name:   getTokenDisplayName(&jetbrainsAccounts[i]),
-				Status: "错误",
-			}
+			tokensInfo = append(tokensInfo, gin.H{
+				"name":       getTokenDisplayName(&jetbrainsAccounts[i]),
+				"license":    "",
+				"used":       0.0,
+				"total":      0.0,
+				"usageRate":  0.0,
+				"expiryDate": "",
+				"status":     "错误",
+			})
+		} else {
+			tokensInfo = append(tokensInfo, gin.H{
+				"name":       tokenInfo.Name,
+				"license":    tokenInfo.License,
+				"used":       tokenInfo.Used,
+				"total":      tokenInfo.Total,
+				"usageRate":  tokenInfo.UsageRate,
+				"expiryDate": tokenInfo.ExpiryDate.Format("2006/1/2 14:30:20"),
+				"status":     tokenInfo.Status,
+			})
 		}
-		tokensInfo = append(tokensInfo, *tokenInfo)
 	}
 
 	// 获取统计数据
@@ -818,7 +843,7 @@ func showStatsPage(c *gin.Context) {
 	var expiryInfo []gin.H
 	for i := range jetbrainsAccounts {
 		account := &jetbrainsAccounts[i]
-		expiryTime := getTokenExpiryTime(account.JWT)
+		expiryTime := account.ExpiryTime
 
 		status := "正常"
 		warning := "正常"
@@ -828,23 +853,23 @@ func showStatsPage(c *gin.Context) {
 		}
 
 		expiryInfo = append(expiryInfo, gin.H{
-			"Name":       getTokenDisplayName(account),
-			"ExpiryTime": expiryTime.Format("2006-01-02 15:04:05"),
-			"Status":     status,
-			"Warning":    warning,
+			"name":       getTokenDisplayName(account),
+			"expiryTime": expiryTime.Format("2006-01-02 15:04:05"),
+			"status":     status,
+			"warning":    warning,
 		})
 	}
 
-	c.HTML(http.StatusOK, "stats.html", gin.H{
-		"CurrentTime":  time.Now().Format("2006-01-02 15:04:05"),
-		"CurrentQPS":   fmt.Sprintf("%.2f", currentQPS),
-		"TotalRecords": requestStats.TotalRequests,
-		"Stats24h":     stats24h,
-		"Stats7d":      stats7d,
-		"Stats30d":     stats30d,
-		"TokensInfo":   tokensInfo,
-		"ExpiryInfo":   expiryInfo,
-		"Timestamp":    time.Now().Format(time.RFC1123),
+	// 返回JSON数据
+	c.JSON(http.StatusOK, gin.H{
+		"currentTime":  time.Now().Format("2006-01-02 15:04:05"),
+		"currentQPS":   fmt.Sprintf("%.2f", currentQPS),
+		"totalRecords": requestStats.TotalRequests,
+		"stats24h":     stats24h,
+		"stats7d":      stats7d,
+		"stats30d":     stats30d,
+		"tokensInfo":   tokensInfo,
+		"expiryInfo":   expiryInfo,
 	})
 }
 
@@ -1056,7 +1081,7 @@ func chatCompletions(c *gin.Context) {
 
 		streamID := "chatcmpl-" + uuid.New().String()
 		firstChunkSent := false
-		var currentTool *map[string]interface{}
+		var currentTool *map[string]any
 
 		// Variables for assembling complete response content
 		var assembledContent []string
@@ -1077,7 +1102,7 @@ func chatCompletions(c *gin.Context) {
 			}
 
 			dataStr := line[6:]
-			var data map[string]interface{}
+			var data map[string]any
 			if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
 				continue
 			}
@@ -1093,15 +1118,15 @@ func chatCompletions(c *gin.Context) {
 				// Collect content for assembly
 				assembledContent = append(assembledContent, content)
 
-				var deltaPayload map[string]interface{}
+				var deltaPayload map[string]any
 				if !firstChunkSent {
-					deltaPayload = map[string]interface{}{
+					deltaPayload = map[string]any{
 						"role":    "assistant",
 						"content": content,
 					}
 					firstChunkSent = true
 				} else {
-					deltaPayload = map[string]interface{}{
+					deltaPayload = map[string]any{
 						"content": content,
 					}
 				}
@@ -1141,10 +1166,10 @@ func chatCompletions(c *gin.Context) {
 
 				if funcName != "" {
 					// Start of new function call
-					currentTool = &map[string]interface{}{
+					currentTool = &map[string]any{
 						"index": 0,
 						"id":    fmt.Sprintf("call_%s", uuid.New().String()),
-						"function": map[string]interface{}{
+						"function": map[string]any{
 							"arguments": "",
 							"name":      funcName,
 						},
@@ -1152,7 +1177,7 @@ func chatCompletions(c *gin.Context) {
 					}
 				} else if currentTool != nil {
 					// Continuation of function arguments
-					if funcMap, ok := (*currentTool)["function"].(map[string]interface{}); ok {
+					if funcMap, ok := (*currentTool)["function"].(map[string]any); ok {
 						currentArgs, _ := funcMap["arguments"].(string)
 						funcMap["arguments"] = currentArgs + funcArgs
 					}
@@ -1183,8 +1208,8 @@ func chatCompletions(c *gin.Context) {
 
 				// Send the complete tool call if we have one
 				if currentTool != nil {
-					deltaPayload := map[string]interface{}{
-						"tool_calls": []map[string]interface{}{*currentTool},
+					deltaPayload := map[string]any{
+						"tool_calls": []map[string]any{*currentTool},
 					}
 					streamResp := StreamResponse{
 						ID:      streamID,
@@ -1203,7 +1228,7 @@ func chatCompletions(c *gin.Context) {
 					Object:  "chat.completion.chunk",
 					Created: time.Now().Unix(),
 					Model:   request.Model,
-					Choices: []StreamChoice{{Delta: map[string]interface{}{}, FinishReason: stringPtr("tool_calls")}},
+					Choices: []StreamChoice{{Delta: map[string]any{}, FinishReason: stringPtr("tool_calls")}},
 				}
 
 				respJSON, _ := json.Marshal(finalResp)
@@ -1241,7 +1266,7 @@ func chatCompletions(c *gin.Context) {
 			}
 
 			dataStr := line[6:]
-			var data map[string]interface{}
+			var data map[string]any
 			if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
 				continue
 			}
@@ -1404,7 +1429,13 @@ func getTokenExpiryTime(jwt string) time.Time {
 		return time.Time{}
 	}
 
-	return time.Unix(claims.Exp, 0)
+	exp := claims.Exp
+	// Heuristic to check if timestamp is in seconds or milliseconds.
+	// 13 digits is milliseconds, 10 digits is seconds.
+	if exp > 1000000000000 { // A simple check for a 13-digit number
+		return time.Unix(exp/1000, (exp%1000)*1000000)
+	}
+	return time.Unix(exp, 0)
 }
 
 // Statistics functions
@@ -1503,7 +1534,17 @@ func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
 		usageRate = (dailyUsed / dailyTotal) * 100
 	}
 
-	expiryTime := getTokenExpiryTime(account.JWT)
+	var expiryTime time.Time
+	if expiryTimeInt, ok := quotaData["expiryTime"]; ok {
+		if expiry, ok := expiryTimeInt.(time.Time); ok {
+			expiryTime = expiry
+		}
+	}
+
+	// If expiryTime is still zero, fall back to JWT parsing as a backup
+	if expiryTime.IsZero() {
+		expiryTime = getTokenExpiryTime(account.JWT)
+	}
 
 	status := "正常"
 	if !account.HasQuota {
@@ -1572,20 +1613,6 @@ func main() {
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 
-	// Add custom template functions
-	funcMap := template.FuncMap{
-		"div": func(a, b float64) float64 {
-			if b == 0 {
-				return 0
-			}
-			return a / b
-		},
-		"mul": func(a, b float64) float64 {
-			return a * b
-		},
-	}
-	r.SetFuncMap(funcMap)
-
 	// Add CORS middleware
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -1601,9 +1628,10 @@ func main() {
 		c.Next()
 	})
 
-	r.LoadHTMLGlob("templates/*")
+	// 静态页面路由（不需要认证）
 	r.GET("/", showStatsPage)
 	r.GET("/log", streamLog)
+	r.GET("/api/stats", getStatsData) // 新增JSON API端点
 
 	// API routes
 	api := r.Group("/v1")

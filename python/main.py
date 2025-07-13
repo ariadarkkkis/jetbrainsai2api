@@ -275,25 +275,22 @@ def load_jetbrains_accounts():
     # 从环境变量加载账户信息
     license_ids = os.getenv("JETBRAINS_LICENSE_IDS", "").split(",") if os.getenv("JETBRAINS_LICENSE_IDS") else []
     authorizations = os.getenv("JETBRAINS_AUTHORIZATIONS", "").split(",") if os.getenv("JETBRAINS_AUTHORIZATIONS") else []
-    jwts = os.getenv("JETBRAINS_JWTS", "").split(",") if os.getenv("JETBRAINS_JWTS") else []
     
     # 清理空值
     license_ids = [lid.strip() for lid in license_ids if lid.strip()]
     authorizations = [auth.strip() for auth in authorizations if auth.strip()]
-    jwts = [jwt.strip() for jwt in jwts if jwt.strip()]
     
     # 确保所有数组长度一致
-    max_len = max(len(license_ids), len(authorizations), len(jwts))
+    max_len = max(len(license_ids), len(authorizations)) if license_ids or authorizations else 0
     license_ids.extend([""] * (max_len - len(license_ids)))
     authorizations.extend([""] * (max_len - len(authorizations)))
-    jwts.extend([""] * (max_len - len(jwts)))
     
     for i in range(max_len):
-        if license_ids[i] or authorizations[i] or jwts[i]:  # 至少有一个值不为空
+        if license_ids[i] and authorizations[i]:  # 必须同时提供licenseId和authorization
             processed_accounts.append({
-                "licenseId": license_ids[i] if license_ids[i] else None,
-                "authorization": authorizations[i] if authorizations[i] else None,
-                "jwt": jwts[i] if jwts[i] else None,
+                "licenseId": license_ids[i],
+                "authorization": authorizations[i],
+                "jwt": None,
                 "last_updated": 0,
                 "has_quota": True,
                 "last_quota_check": 0,
@@ -1297,7 +1294,6 @@ if __name__ == "__main__":
             f.write("# JetBrains AI 账户配置（逗号分隔多个）\n")
             f.write("JETBRAINS_LICENSE_IDS=\n")
             f.write("JETBRAINS_AUTHORIZATIONS=\n")
-            f.write("JETBRAINS_JWTS=your-jwt-here\n")
         print("已创建示例 .env 文件")
 
     if not os.path.exists("models.json"):
