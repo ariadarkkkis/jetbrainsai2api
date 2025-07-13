@@ -1,0 +1,71 @@
+# Configuration files with sensitive data
+jetbrainsai.json
+client_api_keys.json
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Go build files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+jetbrainsai2api
+
+# Test coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.claude/settings.local.json
