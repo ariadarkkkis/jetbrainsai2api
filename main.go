@@ -3,12 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +37,52 @@ var (
 	modelsConfig           ModelsConfig // Store the full config for internal model lookup
 	anthropicModelMappings map[string]string
 	httpClient             *http.Client
+	// Statistics tracking
+	requestStats RequestStats
+	statsMutex   sync.Mutex
 )
+
+// Statistics data structures
+type RequestStats struct {
+	TotalRequests      int64           `json:"total_requests"`
+	SuccessfulRequests int64           `json:"successful_requests"`
+	FailedRequests     int64           `json:"failed_requests"`
+	TotalResponseTime  int64           `json:"total_response_time"` // in milliseconds
+	LastRequestTime    time.Time       `json:"last_request_time"`
+	RequestHistory     []RequestRecord `json:"request_history"`
+}
+
+type RequestRecord struct {
+	Timestamp    time.Time `json:"timestamp"`
+	Success      bool      `json:"success"`
+	ResponseTime int64     `json:"response_time"` // in milliseconds
+	Model        string    `json:"model"`
+	Account      string    `json:"account"`
+}
+
+type PeriodStats struct {
+	Requests        int64   `json:"requests"`
+	SuccessRate     float64 `json:"success_rate"`
+	AvgResponseTime int64   `json:"avg_response_time"`
+	QPS             float64 `json:"qps"`
+}
+
+type TokenInfo struct {
+	Name       string    `json:"name"`
+	License    string    `json:"license"`
+	Used       float64   `json:"used"`
+	Total      float64   `json:"total"`
+	UsageRate  float64   `json:"usage_rate"`
+	ExpiryDate time.Time `json:"expiry_date"`
+	Status     string    `json:"status"`
+	HasQuota   bool      `json:"has_quota"`
+}
+
+type JWTClaims struct {
+	Exp int64  `json:"exp"`
+	Iat int64  `json:"iat"`
+	Sub string `json:"sub"`
+}
 
 // Data structures
 type JetbrainsAccount struct {
@@ -276,7 +324,7 @@ func loadModels() ModelsData {
 	}
 
 	now := time.Now().Unix()
-	for modelKey, _ := range config.Models {
+	for modelKey := range config.Models {
 		result.Data = append(result.Data, ModelInfo{
 			ID:      modelKey, // Use key as API model ID
 			Object:  "model",
@@ -649,6 +697,185 @@ func extractTextContent(content interface{}) string {
 	return ""
 }
 
+func getQuotaData(account *JetbrainsAccount) (gin.H, error) {
+	if account.JWT == "" && account.LicenseID != "" {
+		if err := refreshJetbrainsJWT(account); err != nil {
+			return nil, fmt.Errorf("failed to refresh JWT: %w", err)
+		}
+	}
+
+	if account.JWT == "" {
+		return nil, fmt.Errorf("account has no JWT")
+	}
+
+	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/quota/get", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "ktor-client")
+	req.Header.Set("Content-Length", "0")
+	req.Header.Set("Accept-Charset", "UTF-8")
+	req.Header.Set("grazie-agent", `{"name":"aia:pycharm","version":"251.26094.80.13:251.26094.141"}`)
+	req.Header.Set("grazie-authenticate-jwt", account.JWT)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 && account.LicenseID != "" {
+		log.Printf("JWT for %s expired, refreshing...", getAccountIdentifier(account))
+		if err := refreshJetbrainsJWT(account); err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("grazie-authenticate-jwt", account.JWT)
+		resp, err = httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("quota check failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var quotaData gin.H
+	if err := json.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
+		return nil, err
+	}
+
+	// Debug: 打印API响应数据
+	if gin.Mode() == gin.DebugMode {
+		quotaJSON, _ := json.MarshalIndent(quotaData, "", "  ")
+		log.Printf("JetBrains Quota API Response: %s", string(quotaJSON))
+	}
+
+	// Parse the JetBrains API response structure
+	var dailyUsed, dailyTotal float64
+
+	// Extract from the nested structure
+	if current, ok := quotaData["current"].(map[string]interface{}); ok {
+		// Get used amount
+		if currentUsage, ok := current["current"].(map[string]interface{}); ok {
+			if amountStr, ok := currentUsage["amount"].(string); ok {
+				if parsed, err := strconv.ParseFloat(amountStr, 64); err == nil {
+					dailyUsed = parsed
+				}
+			}
+		}
+
+		// Get maximum amount
+		if maximum, ok := current["maximum"].(map[string]interface{}); ok {
+			if amountStr, ok := maximum["amount"].(string); ok {
+				if parsed, err := strconv.ParseFloat(amountStr, 64); err == nil {
+					dailyTotal = parsed
+				}
+			}
+		}
+	}
+
+	// Ensure the values are set in the map for the template
+	quotaData["dailyUsed"] = dailyUsed
+	quotaData["dailyTotal"] = dailyTotal
+
+	if dailyTotal == 0 {
+		dailyTotal = 1 // Avoid division by zero
+	}
+	account.HasQuota = dailyUsed < dailyTotal
+	account.LastQuotaCheck = float64(time.Now().Unix())
+	quotaData["HasQuota"] = account.HasQuota // Add to map for template
+
+	return quotaData, nil
+}
+
+func showStatsPage(c *gin.Context) {
+	// 获取Token信息
+	var tokensInfo []TokenInfo
+	for i := range jetbrainsAccounts {
+		tokenInfo, err := getTokenInfoFromAccount(&jetbrainsAccounts[i])
+		if err != nil {
+			log.Printf("Error getting token info for account %d: %v", i, err)
+			tokenInfo = &TokenInfo{
+				Name:   getTokenDisplayName(&jetbrainsAccounts[i]),
+				Status: "错误",
+			}
+		}
+		tokensInfo = append(tokensInfo, *tokenInfo)
+	}
+
+	// 获取统计数据
+	stats24h := getPeriodStats(24)
+	stats7d := getPeriodStats(24 * 7)
+	stats30d := getPeriodStats(24 * 30)
+	currentQPS := getCurrentQPS()
+
+	// 准备Token过期监控数据
+	var expiryInfo []gin.H
+	for i := range jetbrainsAccounts {
+		account := &jetbrainsAccounts[i]
+		expiryTime := getTokenExpiryTime(account.JWT)
+
+		status := "正常"
+		warning := "正常"
+		if time.Now().Add(24 * time.Hour).After(expiryTime) {
+			status = "即将过期"
+			warning = "即将过期"
+		}
+
+		expiryInfo = append(expiryInfo, gin.H{
+			"Name":       getTokenDisplayName(account),
+			"ExpiryTime": expiryTime.Format("2006-01-02 15:04:05"),
+			"Status":     status,
+			"Warning":    warning,
+		})
+	}
+
+	c.HTML(http.StatusOK, "stats.html", gin.H{
+		"CurrentTime":  time.Now().Format("2006-01-02 15:04:05"),
+		"CurrentQPS":   fmt.Sprintf("%.2f", currentQPS),
+		"TotalRecords": requestStats.TotalRequests,
+		"Stats24h":     stats24h,
+		"Stats7d":      stats7d,
+		"Stats30d":     stats30d,
+		"TokensInfo":   tokensInfo,
+		"ExpiryInfo":   expiryInfo,
+		"Timestamp":    time.Now().Format(time.RFC1123),
+	})
+}
+
+func streamLog(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	// Create a pipe to capture log output
+	r, w, _ := os.Pipe()
+	originalStderr := os.Stderr
+	os.Stderr = w
+	log.SetOutput(w)
+
+	defer func() {
+		os.Stderr = originalStderr
+		log.SetOutput(originalStderr)
+	}()
+
+	scanner := bufio.NewScanner(r)
+	go func() {
+		for scanner.Scan() {
+			fmt.Fprintf(c.Writer, "data: %s\n\n", scanner.Text())
+			c.Writer.Flush()
+		}
+	}()
+
+	// Keep the connection open
+	<-c.Request.Context().Done()
+}
+
 // API Handlers
 func listModels(c *gin.Context) {
 	modelList := ModelList{
@@ -659,23 +886,29 @@ func listModels(c *gin.Context) {
 }
 
 func chatCompletions(c *gin.Context) {
+	startTime := time.Now()
 	var request ChatCompletionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
+		recordRequest(false, time.Since(startTime).Milliseconds(), "", "")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	modelConfig := getModelItem(request.Model)
 	if modelConfig == nil {
+		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, "")
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Model %s not found", request.Model)})
 		return
 	}
 
 	account, err := getNextJetbrainsAccount()
 	if err != nil {
+		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, "")
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 		return
 	}
+
+	accountIdentifier := getAccountIdentifier(account)
 
 	// Convert OpenAI format to JetBrains format
 	toolIDToFuncNameMap := make(map[string]string)
@@ -762,6 +995,7 @@ func chatCompletions(c *gin.Context) {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
+		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal request"})
 		return
 	}
@@ -772,6 +1006,7 @@ func chatCompletions(c *gin.Context) {
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v7", bytes.NewBuffer(payloadBytes))
 	if err != nil {
+		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
 		return
 	}
@@ -786,14 +1021,17 @@ func chatCompletions(c *gin.Context) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to make request"})
 		return
 	}
 	defer resp.Body.Close()
 
 	// Output JetBrains API response status and headers
-	log.Printf("JetBrains API Response Status: %d", resp.StatusCode)
-	log.Printf("JetBrains API Response Headers: %+v", resp.Header)
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("JetBrains API Response Status: %d", resp.StatusCode)
+		log.Printf("JetBrains API Response Headers: %+v", resp.Header)
+	}
 
 	if resp.StatusCode == 477 {
 		log.Printf("Account %s has no quota (received 477)", getAccountIdentifier(account))
@@ -805,6 +1043,7 @@ func chatCompletions(c *gin.Context) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("API Error: Status %d, Body: %s", resp.StatusCode, string(body))
+		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 		c.JSON(resp.StatusCode, gin.H{"error": string(body)})
 		return
 	}
@@ -824,11 +1063,14 @@ func chatCompletions(c *gin.Context) {
 		var assembledFunctionCalls []map[string]string
 
 		scanner := bufio.NewScanner(resp.Body)
+		success := true
 		for scanner.Scan() {
 			line := scanner.Text()
 
 			// Log each line received from JetBrains API
-			// log.Printf("JetBrains API Response Line: %s", line)
+			if gin.Mode() == gin.DebugMode {
+				log.Printf("JetBrains API Response Line: %s", line)
+			}
 
 			if !strings.HasPrefix(line, "data: ") || line == "data: end" {
 				continue
@@ -887,7 +1129,9 @@ func chatCompletions(c *gin.Context) {
 				}
 
 				// Debug logging
-				log.Printf("DEBUG: funcNameInterface = %v, funcName = '%s', funcArgs = '%s'", funcNameInterface, funcName, funcArgs)
+				if gin.Mode() == gin.DebugMode {
+					log.Printf("DEBUG: funcNameInterface = %v, funcName = '%s', funcArgs = '%s'", funcNameInterface, funcName, funcArgs)
+				}
 
 				// Collect function calls for assembly - match Python behavior
 				assembledFunctionCalls = append(assembledFunctionCalls, map[string]string{
@@ -923,16 +1167,18 @@ func chatCompletions(c *gin.Context) {
 				}
 
 				// Output assembled function calls
-				for _, fc := range assembledFunctionCalls {
-					name := fc["name"]
-					if name == "" {
-						name = "None"
+				if gin.Mode() == gin.DebugMode {
+					for _, fc := range assembledFunctionCalls {
+						name := fc["name"]
+						if name == "" {
+							name = "None"
+						}
+						args := fc["arguments"]
+						if args == "" {
+							args = ""
+						}
+						log.Printf("Assembled Function Call: %s with args: %s", name, args)
 					}
-					args := fc["arguments"]
-					if args == "" {
-						args = ""
-					}
-					log.Printf("Assembled Function Call: %s with args: %s", name, args)
 				}
 
 				// Send the complete tool call if we have one
@@ -967,6 +1213,8 @@ func chatCompletions(c *gin.Context) {
 				break
 			}
 		}
+
+		recordRequest(success, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 	} else {
 		// Handle non-streaming response - aggregate the stream
 		var contentParts []string
@@ -979,11 +1227,14 @@ func chatCompletions(c *gin.Context) {
 		var assembledFunctionCalls []map[string]string
 
 		scanner := bufio.NewScanner(resp.Body)
+		success := true
 		for scanner.Scan() {
 			line := scanner.Text()
 
 			// Log each line received from JetBrains API
-			log.Printf("JetBrains API Response Line: %s", line)
+			if gin.Mode() == gin.DebugMode {
+				log.Printf("JetBrains API Response Line: %s", line)
+			}
 
 			if !strings.HasPrefix(line, "data: ") || line == "data: end" {
 				continue
@@ -1004,7 +1255,9 @@ func chatCompletions(c *gin.Context) {
 					assembledContent = append(assembledContent, content)
 				}
 			} else if eventType == "FunctionCall" {
-				log.Printf("Received FunctionCall event: %v", data)
+				if gin.Mode() == gin.DebugMode {
+					log.Printf("Received FunctionCall event: %v", data)
+				}
 				funcNameInterface := data["name"]
 				funcArgs, _ := data["content"].(string)
 
@@ -1016,8 +1269,12 @@ func chatCompletions(c *gin.Context) {
 				}
 
 				// Debug logging
-				log.Printf("DEBUG: funcNameInterface = %v, funcName = '%s', funcArgs = '%s'", funcNameInterface, funcName, funcArgs)
-				log.Printf("Function name: %s, Arguments: %s", funcName, funcArgs)
+				if gin.Mode() == gin.DebugMode {
+					log.Printf("DEBUG: funcNameInterface = %v, funcName = '%s', funcArgs = '%s'", funcNameInterface, funcName, funcArgs)
+				}
+				if gin.Mode() == gin.DebugMode {
+					log.Printf("Function name: %s, Arguments: %s", funcName, funcArgs)
+				}
 
 				// Collect function calls for assembly - match Python behavior
 				assembledFunctionCalls = append(assembledFunctionCalls, map[string]string{
@@ -1042,16 +1299,18 @@ func chatCompletions(c *gin.Context) {
 				}
 
 				// Output assembled function calls
-				for _, fc := range assembledFunctionCalls {
-					name := fc["name"]
-					if name == "" {
-						name = "None"
+				if gin.Mode() == gin.DebugMode {
+					for _, fc := range assembledFunctionCalls {
+						name := fc["name"]
+						if name == "" {
+							name = "None"
+						}
+						args := fc["arguments"]
+						if args == "" {
+							args = ""
+						}
+						log.Printf("Assembled Function Call: %s with args: %s", name, args)
 					}
-					args := fc["arguments"]
-					if args == "" {
-						args = ""
-					}
-					log.Printf("Assembled Function Call: %s with args: %s", name, args)
 				}
 
 				// Complete the function call if we have one
@@ -1098,12 +1357,190 @@ func chatCompletions(c *gin.Context) {
 			},
 		}
 
+		recordRequest(success, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 		c.JSON(http.StatusOK, response)
 	}
 }
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+// JWT parsing functions
+func parseJWT(tokenString string) (*JWTClaims, error) {
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid token format")
+	}
+
+	// Decode payload (second part)
+	payload := parts[1]
+	// Add padding if necessary
+	if len(payload)%4 != 0 {
+		payload += strings.Repeat("=", 4-len(payload)%4)
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode payload: %v", err)
+	}
+
+	var claims JWTClaims
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal claims: %v", err)
+	}
+
+	return &claims, nil
+}
+
+func getTokenExpiryTime(jwt string) time.Time {
+	if jwt == "" {
+		return time.Time{}
+	}
+
+	claims, err := parseJWT(jwt)
+	if err != nil {
+		log.Printf("Error parsing JWT: %v", err)
+		return time.Time{}
+	}
+
+	return time.Unix(claims.Exp, 0)
+}
+
+// Statistics functions
+func recordRequest(success bool, responseTime int64, model, account string) {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	requestStats.TotalRequests++
+	requestStats.LastRequestTime = time.Now()
+	requestStats.TotalResponseTime += responseTime
+
+	if success {
+		requestStats.SuccessfulRequests++
+	} else {
+		requestStats.FailedRequests++
+	}
+
+	// Add to history (keep last 1000 records)
+	record := RequestRecord{
+		Timestamp:    time.Now(),
+		Success:      success,
+		ResponseTime: responseTime,
+		Model:        model,
+		Account:      account,
+	}
+
+	requestStats.RequestHistory = append(requestStats.RequestHistory, record)
+	if len(requestStats.RequestHistory) > 1000 {
+		requestStats.RequestHistory = requestStats.RequestHistory[1:]
+	}
+}
+
+func getPeriodStats(hours int) PeriodStats {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+	var periodRequests int64
+	var periodSuccessful int64
+	var periodResponseTime int64
+
+	for _, record := range requestStats.RequestHistory {
+		if record.Timestamp.After(cutoff) {
+			periodRequests++
+			periodResponseTime += record.ResponseTime
+			if record.Success {
+				periodSuccessful++
+			}
+		}
+	}
+
+	stats := PeriodStats{
+		Requests: periodRequests,
+	}
+
+	if periodRequests > 0 {
+		stats.SuccessRate = float64(periodSuccessful) / float64(periodRequests) * 100
+		stats.AvgResponseTime = periodResponseTime / periodRequests
+		stats.QPS = float64(periodRequests) / float64(hours) / 3600.0
+	}
+
+	return stats
+}
+
+func getCurrentQPS() float64 {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Minute)
+	var recentRequests int64
+
+	for _, record := range requestStats.RequestHistory {
+		if record.Timestamp.After(cutoff) {
+			recentRequests++
+		}
+	}
+
+	return float64(recentRequests) / 60.0
+}
+
+func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
+	quotaData, err := getQuotaData(account)
+	if err != nil {
+		return &TokenInfo{
+			Name:   getTokenDisplayName(account),
+			Status: "错误",
+		}, err
+	}
+
+	dailyUsed, _ := quotaData["dailyUsed"].(float64)
+	dailyTotal, _ := quotaData["dailyTotal"].(float64)
+
+	var usageRate float64
+	if dailyTotal > 0 {
+		usageRate = (dailyUsed / dailyTotal) * 100
+	}
+
+	expiryTime := getTokenExpiryTime(account.JWT)
+
+	status := "正常"
+	if !account.HasQuota {
+		status = "配额不足"
+	} else if time.Now().Add(24 * time.Hour).After(expiryTime) {
+		status = "即将过期"
+	}
+
+	return &TokenInfo{
+		Name:       getTokenDisplayName(account),
+		License:    getLicenseDisplayName(account),
+		Used:       dailyUsed,
+		Total:      dailyTotal,
+		UsageRate:  usageRate,
+		ExpiryDate: expiryTime,
+		Status:     status,
+		HasQuota:   account.HasQuota,
+	}, nil
+}
+
+func getTokenDisplayName(account *JetbrainsAccount) string {
+	if account.JWT != "" && len(account.JWT) > 10 {
+		return "Token ..." + account.JWT[len(account.JWT)-6:]
+	}
+	if account.LicenseID != "" && len(account.LicenseID) > 10 {
+		return "Token ..." + account.LicenseID[len(account.LicenseID)-6:]
+	}
+	return "Token Unknown"
+}
+
+func getLicenseDisplayName(account *JetbrainsAccount) string {
+	if account.Authorization != "" && len(account.Authorization) > 20 {
+		prefix := account.Authorization[:3]
+		suffix := account.Authorization[len(account.Authorization)-3:]
+		return prefix + "*" + suffix
+	}
+	return "Unknown"
 }
 
 func main() {
@@ -1135,6 +1572,20 @@ func main() {
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 
+	// Add custom template functions
+	funcMap := template.FuncMap{
+		"div": func(a, b float64) float64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mul": func(a, b float64) float64 {
+			return a * b
+		},
+	}
+	r.SetFuncMap(funcMap)
+
 	// Add CORS middleware
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -1149,6 +1600,10 @@ func main() {
 
 		c.Next()
 	})
+
+	r.LoadHTMLGlob("templates/*")
+	r.GET("/", showStatsPage)
+	r.GET("/log", streamLog)
 
 	// API routes
 	api := r.Group("/v1")
