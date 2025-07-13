@@ -187,18 +187,19 @@ def load_models():
         # 支持新格式（包含 models 和 anthropic_model_mappings）
         if isinstance(config, dict):
             if "models" in config:
-                model_ids = config["models"]
+                models_data = config["models"]
                 # 加载模型映射配置
                 anthropic_model_mappings = config.get("anthropic_model_mappings", {})
                 print(f"从 models.json 加载了 {len(anthropic_model_mappings)} 个模型映射规则")
             else:
                 # 处理旧格式的字典（如果有其他字段但没有 models）
-                model_ids = []
+                models_data = {}
                 anthropic_model_mappings = {}
                 print("警告: models.json 使用非标准格式，没有找到 models 字段")
         # 支持旧格式（仅包含模型列表）
         elif isinstance(config, list):
-            model_ids = config
+            # 将数组转换为 key:value 格式，使用模型名作为 key 和 value
+            models_data = {model_id: model_id for model_id in config}
             anthropic_model_mappings = {}
             print("警告: models.json 使用旧格式，没有找到模型映射配置")
         else:
@@ -206,8 +207,21 @@ def load_models():
             return {"data": []}
 
         processed_models = []
-        if isinstance(model_ids, list):
-            for model_id in model_ids:
+        if isinstance(models_data, dict):
+            # 新格式: key:value 映射
+            for model_key, model_value in models_data.items():
+                processed_models.append(
+                    {
+                        "id": model_key,  # 使用 key 作为 API 中的模型 ID
+                        "object": "model",
+                        "created": int(time.time()),
+                        "owned_by": "jetbrains-ai",
+                        "_internal_model": model_value,  # 内部实际调用的模型名
+                    }
+                )
+        elif isinstance(models_data, list):
+            # 兼容旧格式
+            for model_id in models_data:
                 if isinstance(model_id, str):
                     processed_models.append(
                         {
@@ -215,6 +229,7 @@ def load_models():
                             "object": "model",
                             "created": int(time.time()),
                             "owned_by": "jetbrains-ai",
+                            "_internal_model": model_id,
                         }
                     )
 
@@ -297,6 +312,14 @@ def get_model_item(model_id: str) -> Optional[Dict]:
         if model.get("id") == model_id:
             return model
     return None
+
+
+def get_internal_model_name(model_id: str) -> str:
+    """获取内部实际调用的模型名"""
+    model_item = get_model_item(model_id)
+    if model_item:
+        return model_item.get("_internal_model", model_id)
+    return model_id
 
 
 async def authenticate_client(
@@ -827,9 +850,10 @@ async def chat_completions(
         data.append({"type": "json", "value": json.dumps(tools)})
 
     # 创建 API 请求的 payload
+    internal_model = get_internal_model_name(request.model)
     payload = {
         "prompt": "ij.chat.request.new-chat-on-start",
-        "profile": request.model,
+        "profile": internal_model,  # 使用内部模型名
         "chat": {"messages": jetbrains_messages},
         "parameters": {"data": data},
     }
@@ -866,7 +890,7 @@ async def chat_completions(
                 print(f"JetBrains API Response Headers: {dict(response.headers)}")
                 
                 async for line in response.aiter_lines():
-                    print(f"JetBrains API Response Line: {line}")
+                    # print(f"JetBrains API Response Line: {line}")
                     yield line
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 477:
@@ -1200,7 +1224,7 @@ async def messages_completions(
 
     payload = {
         "prompt": "ij.chat.request.new-chat-on-start",
-        "profile": openai_request.model,
+        "profile": get_internal_model_name(openai_request.model),  # 使用内部模型名
         "chat": {"messages": jetbrains_messages},
         "parameters": {"data": data},
     }
@@ -1279,10 +1303,14 @@ if __name__ == "__main__":
     if not os.path.exists("models.json"):
         with open("models.json", "w", encoding="utf-8") as f:
             example_config = {
-                "models": ["anthropic-claude-3.5-sonnet"],
+                "models": {
+                    "claude-3.5": "anthropic-claude-3.5-sonnet",
+                    "claude-4": "anthropic-claude-4-sonnet",
+                    "gpt-4o": "openai-gpt-4o"
+                },
                 "anthropic_model_mappings": {
-                    "claude-3.5-sonnet": "anthropic-claude-3.5-sonnet",
-                    "sonnet": "anthropic-claude-3.5-sonnet"
+                    "claude-3.5-sonnet": "claude-3.5",
+                    "sonnet": "claude-3.5"
                 }
             }
             json.dump(example_config, f, indent=2)
@@ -1296,4 +1324,9 @@ if __name__ == "__main__":
     print("\n在 Authorization header 中使用客户端 API 密钥 (Bearer sk-xxx)")
     print("\n配置说明: 请编辑 .env 文件设置API密钥和账户信息")
 
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    # 从环境变量获取端口，默认为7860
+    port = int(os.getenv("PORT", "7860"))
+    host = os.getenv("HOST", "0.0.0.0")
+    print(f"\n服务器将在 {host}:{port} 启动")
+
+    uvicorn.run(app, host=host, port=port)

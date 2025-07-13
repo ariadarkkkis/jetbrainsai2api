@@ -31,6 +31,7 @@ var (
 	currentAccountIndex    int
 	accountRotationLock    sync.Mutex
 	modelsData             ModelsData
+	modelsConfig           ModelsConfig // Store the full config for internal model lookup
 	anthropicModelMappings map[string]string
 	httpClient             *http.Client
 )
@@ -62,7 +63,7 @@ type ModelList struct {
 }
 
 type ModelsConfig struct {
-	Models                 []string          `json:"models"`
+	Models                 map[string]string `json:"models"`
 	AnthropicModelMappings map[string]string `json:"anthropic_model_mappings"`
 }
 
@@ -241,14 +242,32 @@ func loadModels() ModelsData {
 	var config ModelsConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		// Try old format (array of strings)
-		var modelIDs []string
-		if err := json.Unmarshal(data, &modelIDs); err != nil {
-			log.Printf("Error parsing models.json: %v", err)
-			anthropicModelMappings = make(map[string]string)
-			return result
+		var oldConfig struct {
+			Models                 []string          `json:"models"`
+			AnthropicModelMappings map[string]string `json:"anthropic_model_mappings"`
 		}
-		config.Models = modelIDs
-		config.AnthropicModelMappings = make(map[string]string)
+		if err := json.Unmarshal(data, &oldConfig); err != nil {
+			// Try simple array format
+			var modelIDs []string
+			if err := json.Unmarshal(data, &modelIDs); err != nil {
+				log.Printf("Error parsing models.json: %v", err)
+				anthropicModelMappings = make(map[string]string)
+				return result
+			}
+			// Convert array to map format (model_id: model_id)
+			config.Models = make(map[string]string)
+			for _, modelID := range modelIDs {
+				config.Models[modelID] = modelID
+			}
+			config.AnthropicModelMappings = make(map[string]string)
+		} else {
+			// Convert old format to new format
+			config.Models = make(map[string]string)
+			for _, modelID := range oldConfig.Models {
+				config.Models[modelID] = modelID
+			}
+			config.AnthropicModelMappings = oldConfig.AnthropicModelMappings
+		}
 	}
 
 	anthropicModelMappings = config.AnthropicModelMappings
@@ -257,9 +276,9 @@ func loadModels() ModelsData {
 	}
 
 	now := time.Now().Unix()
-	for _, modelID := range config.Models {
+	for modelKey, _ := range config.Models {
 		result.Data = append(result.Data, ModelInfo{
-			ID:      modelID,
+			ID:      modelKey, // Use key as API model ID
 			Object:  "model",
 			Created: now,
 			OwnedBy: "jetbrains-ai",
@@ -377,6 +396,15 @@ func loadJetbrainsAccounts() {
 	} else {
 		log.Printf("Successfully loaded %d JetBrains AI accounts from environment", len(jetbrainsAccounts))
 	}
+}
+
+func getInternalModelName(modelID string) string {
+	// Check if it's in the models config
+	if internalModel, exists := modelsConfig.Models[modelID]; exists {
+		return internalModel
+	}
+	// Fallback to the original model ID
+	return modelID
 }
 
 func getModelItem(modelID string) *ModelInfo {
@@ -723,9 +751,11 @@ func chatCompletions(c *gin.Context) {
 		data = []JetbrainsData{}
 	}
 
+	// Use internal model name for JetBrains API call
+	internalModel := getInternalModelName(request.Model)
 	payload := JetbrainsPayload{
 		Prompt:     "ij.chat.request.new-chat-on-start",
-		Profile:    request.Model,
+		Profile:    internalModel, // Use internal model name
 		Chat:       JetbrainsChat{Messages: jetbrainsMessages},
 		Parameters: JetbrainsParameters{Data: data},
 	}
@@ -736,7 +766,9 @@ func chatCompletions(c *gin.Context) {
 		return
 	}
 
-	log.Printf("Sending payload to JetBrains API: %s", string(payloadBytes))
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("Sending payload to JetBrains API: %s", string(payloadBytes))
+	}
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v7", bytes.NewBuffer(payloadBytes))
 	if err != nil {
@@ -796,7 +828,7 @@ func chatCompletions(c *gin.Context) {
 			line := scanner.Text()
 
 			// Log each line received from JetBrains API
-			log.Printf("JetBrains API Response Line: %s", line)
+			// log.Printf("JetBrains API Response Line: %s", line)
 
 			if !strings.HasPrefix(line, "data: ") || line == "data: end" {
 				continue
@@ -883,9 +915,11 @@ func chatCompletions(c *gin.Context) {
 				}
 			} else if eventType == "FinishMetadata" {
 				// Output assembled complete content
-				if len(assembledContent) > 0 {
-					fullContent := strings.Join(assembledContent, "")
-					log.Printf("Assembled Content: %s", fullContent)
+				if gin.Mode() == gin.DebugMode {
+					if len(assembledContent) > 0 {
+						fullContent := strings.Join(assembledContent, "")
+						log.Printf("Assembled Content: %s", fullContent)
+					}
 				}
 
 				// Output assembled function calls
@@ -1000,9 +1034,11 @@ func chatCompletions(c *gin.Context) {
 				currentFuncArgs += funcArgs
 			} else if eventType == "FinishMetadata" {
 				// Output assembled complete content
-				if len(assembledContent) > 0 {
-					fullContent := strings.Join(assembledContent, "")
-					log.Printf("Assembled Content: %s", fullContent)
+				if gin.Mode() == gin.DebugMode {
+					if len(assembledContent) > 0 {
+						fullContent := strings.Join(assembledContent, "")
+						log.Printf("Assembled Content: %s", fullContent)
+					}
 				}
 
 				// Output assembled function calls
@@ -1081,15 +1117,23 @@ func main() {
 
 	// Load configuration
 	modelsData = loadModels()
+	// Load the full config for internal model lookup
+	data, err := os.ReadFile("models.json")
+	if err == nil {
+		json.Unmarshal(data, &modelsConfig)
+	}
 	loadClientAPIKeys()
 	loadJetbrainsAccounts()
 
-	// Create example configuration files if they don't exist
-	createExampleConfigs()
-
 	// Setup Gin router
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+	ginMode := os.Getenv("GIN_MODE")
+	if ginMode == "" {
+		ginMode = gin.ReleaseMode
+	}
+	gin.SetMode(ginMode)
+	r := gin.New()
+	r.Use(gin.Logger())
+	r.Use(gin.Recovery())
 
 	// Add CORS middleware
 	r.Use(func(c *gin.Context) {
@@ -1115,44 +1159,12 @@ func main() {
 	}
 
 	log.Println("Starting JetBrains AI OpenAI Compatible API server...")
-	log.Println("Endpoints:")
-	log.Println("  GET  /v1/models")
-	log.Println("  POST /v1/chat/completions")
-	log.Println("\nUse client API key in Authorization header (Bearer sk-xxx)")
-	log.Println("\nConfiguration: Please edit .env file to set API keys and account information")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "7860"
+	}
 
-	if err := r.Run(":7860"); err != nil {
+	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
-	}
-}
-
-func createExampleConfigs() {
-	// Create .env file if it doesn't exist
-	if _, err := os.Stat(".env"); os.IsNotExist(err) {
-		envContent := `# JetBrains AI API Configuration
-# 客户端API密钥（逗号分隔多个）
-CLIENT_API_KEYS=sk-your-custom-key-here
-
-# JetBrains AI 账户配置（逗号分隔多个）
-JETBRAINS_LICENSE_IDS=
-JETBRAINS_AUTHORIZATIONS=
-JETBRAINS_JWTS=your-jwt-here
-`
-		os.WriteFile(".env", []byte(envContent), 0644)
-		log.Println("Created example .env file")
-	}
-
-	// Create models.json if it doesn't exist
-	if _, err := os.Stat("models.json"); os.IsNotExist(err) {
-		config := ModelsConfig{
-			Models: []string{"anthropic-claude-3.5-sonnet"},
-			AnthropicModelMappings: map[string]string{
-				"claude-3.5-sonnet": "anthropic-claude-3.5-sonnet",
-				"sonnet":            "anthropic-claude-3.5-sonnet",
-			},
-		}
-		data, _ := json.MarshalIndent(config, "", "  ")
-		os.WriteFile("models.json", data, 0644)
-		log.Println("Created example models.json file")
 	}
 }

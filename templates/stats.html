@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 代理 - 请求统计</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stats-card {
+            background-color: #fff;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #3498db;
+        }
+        .stats-card h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+            color: #2980b9;
+        }
+        .stats-card p {
+            margin: 5px 0;
+        }
+        .stats-card span {
+            font-weight: bold;
+        }
+        .current-stats {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .current-stats div {
+            text-align: center;
+            flex: 1;
+        }
+        .current-stats h3 {
+            margin: 0;
+            font-size: 1em;
+            color: #555;
+        }
+        .current-stats p {
+            font-size: 1.8em;
+            margin: 5px 0;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        .refresh-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .refresh-btn:hover {
+            background-color: #2980b9;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .auto-refresh label {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI 代理 - 请求统计</h1>
+        
+        <div class="auto-refresh">
+            <label for="auto-refresh">自动刷新:</label>
+            <select id="auto-refresh">
+                <option value="0">关闭</option>
+                <option value="5">每 5 秒</option>
+                <option value="10">每 10 秒</option>
+                <option value="30">每 30 秒</option>
+                <option value="60">每分钟</option>
+            </select>
+            <button class="refresh-btn" onclick="fetchStats()">刷新</button>
+        </div>
+
+        <div class="current-stats">
+            <div>
+                <h3>当前时间</h3>
+                <p id="current-time">-</p>
+            </div>
+            <div>
+                <h3>当前 QPS</h3>
+                <p id="current-qps">-</p>
+            </div>
+            <div>
+                <h3>记录总数</h3>
+                <p id="record-count">-</p>
+            </div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stats-card">
+                <h2>24小时统计</h2>
+                <p>请求数: <span id="24h-request-count">-</span></p>
+                <p>成功率: <span id="24h-success-rate">-</span>%</p>
+                <p>平均响应时间: <span id="24h-avg-response-time">-</span> ms</p>
+                <p>QPS: <span id="24h-qps">-</span></p>
+            </div>
+            
+            <div class="stats-card">
+                <h2>7天统计</h2>
+                <p>请求数: <span id="7d-request-count">-</span></p>
+                <p>成功率: <span id="7d-success-rate">-</span>%</p>
+                <p>平均响应时间: <span id="7d-avg-response-time">-</span> ms</p>
+                <p>QPS: <span id="7d-qps">-</span></p>
+            </div>
+            
+            <div class="stats-card">
+                <h2>30天统计</h2>
+                <p>请求数: <span id="30d-request-count">-</span></p>
+                <p>成功率: <span id="30d-success-rate">-</span>%</p>
+                <p>平均响应时间: <span id="30d-avg-response-time">-</span> ms</p>
+                <p>QPS: <span id="30d-qps">-</span></p>
+            </div>
+        </div>
+        
+
+        
+        <div class="stats-card" style="margin-top: 20px;">
+            <h2>所有 Token 配额信息</h2>
+            <div id="all-tokens-quota-container">
+                <p>正在加载...</p>
+            </div>
+            <button class="refresh-btn" onclick="fetchAllTokensQuota()" style="margin-top: 10px;">刷新所有 Token 配额</button>
+        </div>
+        
+      
+        <div class="stats-card" style="margin-top: 20px;">
+            <h2>Token 过期监控</h2>
+            <div id="token-expiry-monitor-container">
+                <p>正在加载...</p>
+            </div>
+            <button class="refresh-btn" onclick="fetchTokenExpiryMonitor()" style="margin-top: 10px;">刷新监控状态</button>
+        </div>
+        
+        <div class="footer">
+            &copy; 2025 AI 代理服务 | 统计开始于启动时间
+        </div>
+    </div>
+
+    <script>
+        let refreshTimer = null;
+        
+        function fetchStats() {
+            fetch('/stats/summary')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('current-time').textContent = data.current_time;
+                    document.getElementById('current-qps').textContent = data.current_qps.toFixed(2);
+                    document.getElementById('record-count').textContent = data.record_count.toLocaleString();
+                    
+                    // 24小时统计
+                    document.getElementById('24h-request-count').textContent = data['24h'].request_count.toLocaleString();
+                    document.getElementById('24h-success-rate').textContent = data['24h'].success_rate.toFixed(2);
+                    document.getElementById('24h-avg-response-time').textContent = data['24h'].avg_response_time_ms.toLocaleString();
+                    document.getElementById('24h-qps').textContent = data['24h'].qps.toFixed(2);
+                    
+                    // 7天统计
+                    document.getElementById('7d-request-count').textContent = data['7d'].request_count.toLocaleString();
+                    document.getElementById('7d-success-rate').textContent = data['7d'].success_rate.toFixed(2);
+                    document.getElementById('7d-avg-response-time').textContent = data['7d'].avg_response_time_ms.toLocaleString();
+                    document.getElementById('7d-qps').textContent = data['7d'].qps.toFixed(2);
+                    
+                    // 30天统计
+                    document.getElementById('30d-request-count').textContent = data['30d'].request_count.toLocaleString();
+                    document.getElementById('30d-success-rate').textContent = data['30d'].success_rate.toFixed(2);
+                    document.getElementById('30d-avg-response-time').textContent = data['30d'].avg_response_time_ms.toLocaleString();
+                    document.getElementById('30d-qps').textContent = data['30d'].qps.toFixed(2);
+                })
+                .catch(error => console.error('Error fetching stats:', error));
+        }
+        function fetchAllTokensQuota() {
+            fetch('/quota/all')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('all-tokens-quota-container');
+                    container.innerHTML = '';
+                    
+                    // 显示许可证配置信息（如果有）
+                    if (data && data.license_ids) {
+                        const licenseInfo = document.createElement('div');
+                        licenseInfo.style.marginBottom = '10px';
+                        
+                        // 格式化显示配置和缺失的许可证
+                        let infoText = '';
+                        if (data.license_ids.configured && data.license_ids.configured.length > 0) {
+                            infoText += `<p>配置的许可证: ${data.license_ids.configured.join(', ')}</p>`;
+                        }
+                        if (data.license_ids.missing && data.license_ids.missing.length > 0) {
+                            infoText += `<p style="color:red">缺失配额信息的许可证: ${data.license_ids.missing.join(', ')}</p>`;
+                        }
+                        
+                        licenseInfo.innerHTML = infoText;
+                        container.appendChild(licenseInfo);
+                    }
+                    
+                    if (data && data.tokens_quota && data.tokens_quota.length > 0) {
+                        const table = document.createElement('table');
+                        table.style.width = '100%';
+                        table.style.borderCollapse = 'collapse';
+                        table.style.marginTop = '10px';
+                        
+                        // 创建表头
+                        const thead = document.createElement('thead');
+                        const headerRow = document.createElement('tr');
+                        
+                        const headers = ['Token名称', '许可证', '已使用', '最大配额', '使用率', '有效期至', '状态'];
+                        headers.forEach(text => {
+                            const th = document.createElement('th');
+                            th.textContent = text;
+                            th.style.padding = '8px';
+                            th.style.borderBottom = '1px solid #ddd';
+                            th.style.textAlign = 'left';
+                            headerRow.appendChild(th);
+                        });
+                        
+                        thead.appendChild(headerRow);
+                        table.appendChild(thead);
+                        
+                        // 创建表格内容
+                        const tbody = document.createElement('tbody');
+                        
+                        // 按许可证ID排序，确保所有许可证都显示出来
+                        data.tokens_quota.sort((a, b) => {
+                            const licenseA = (a.quota?.current?.license || '').toLowerCase();
+                            const licenseB = (b.quota?.current?.license || '').toLowerCase();
+                            return licenseA.localeCompare(licenseB);
+                        });
+                        
+                        // 记录找到的所有许可证
+                        const foundLicenses = new Set();
+                        
+                        data.tokens_quota.forEach(tokenQuota => {
+                            const row = document.createElement('tr');
+                            
+                            // 只有当tokenQuota和tokenQuota.token_info和tokenQuota.quota都存在时才处理
+                            if (tokenQuota && tokenQuota.token_info && tokenQuota.quota) {
+                                const license = tokenQuota.quota.current?.license || '-';
+                                
+                                // 记录找到的许可证
+                                if (license !== '-') {
+                                    foundLicenses.add(license);
+                                }
+                                
+                                // 名称
+                                const nameCell = document.createElement('td');
+                                nameCell.textContent = tokenQuota.token_info.name || '未命名';
+                                nameCell.style.padding = '8px';
+                                nameCell.style.borderBottom = '1px solid #ddd';
+                                
+                                // 许可证
+                                const licenseCell = document.createElement('td');
+                                // 许可证脱敏显示：显示前三位和后三位，中间用星号代替
+                                if (license && license !== '-' && license.length > 6) {
+                                    const prefix = license.substring(0, 3);
+                                    const suffix = license.substring(license.length - 3);
+                                    licenseCell.textContent = prefix + '*' + suffix;
+                                } else {
+                                    licenseCell.textContent = license;
+                                }
+                                licenseCell.style.padding = '8px';
+                                licenseCell.style.borderBottom = '1px solid #ddd';
+                                
+                                // 已使用
+                                const usedCell = document.createElement('td');
+                                const usedAmount = parseFloat(tokenQuota.quota.current?.current?.amount || 0);
+                                usedCell.textContent = usedAmount.toLocaleString();
+                                usedCell.style.padding = '8px';
+                                usedCell.style.borderBottom = '1px solid #ddd';
+                                
+                                // 最大配额
+                                const maxCell = document.createElement('td');
+                                const maxAmount = parseFloat(tokenQuota.quota.current?.maximum?.amount || 0);
+                                maxCell.textContent = maxAmount.toLocaleString();
+                                maxCell.style.padding = '8px';
+                                maxCell.style.borderBottom = '1px solid #ddd';
+                                
+                                // 使用率
+                                const percentCell = document.createElement('td');
+                                let percentage = 0;
+                                if (maxAmount > 0) {
+                                    percentage = ((usedAmount / maxAmount) * 100).toFixed(2);
+                                }
+                                percentCell.textContent = percentage + '%';
+                                percentCell.style.padding = '8px';
+                                percentCell.style.borderBottom = '1px solid #ddd';
+                                
+                                // 如果使用率超过90%，使用红色文本
+                                if (parseFloat(percentage) > 90) {
+                                    percentCell.style.color = 'red';
+                                }
+                                
+                                // 有效期至
+                                const untilCell = document.createElement('td');
+                                if (tokenQuota.quota.current?.until) {
+                                    const timestamp = tokenQuota.quota.current.until;
+                                    let untilDate;
+                                    
+                                    // 处理毫秒级时间戳 (1843160400000这样的大数值)
+                                    if (timestamp > 1000000000000) { // 如果是毫秒级时间戳
+                                        untilDate = new Date(timestamp); // 直接使用，不需要乘以1000
+                                        untilCell.textContent = untilDate.toLocaleDateString('zh-CN');
+                                    } else if (timestamp > 0 && timestamp < 2524608000) { // 秒级时间戳 (1970-2050年之间)
+                                        untilDate = new Date(timestamp * 1000); // 转换为毫秒
+                                        untilCell.textContent = untilDate.toLocaleDateString('zh-CN');
+                                    } else {
+                                        // 尝试将字符串格式的日期转换为合理的日期
+                                        try {
+                                            // 尝试将类似 2028/5/29 的格式解析为日期
+                                            const dateStr = String(timestamp);
+                                            if (dateStr.includes('/')) {
+                                                const parts = dateStr.split('/');
+                                                if (parts.length === 3) {
+                                                    const year = parseInt(parts[0]);
+                                                    const month = parseInt(parts[1]) - 1; // JavaScript月份从0开始
+                                                    const day = parseInt(parts[2]);
+                                                    
+                                                    if (year > 1970 && year < 2050 && month >= 0 && month < 12 && day > 0 && day <= 31) {
+                                                        untilDate = new Date(year, month, day);
+                                                        untilCell.textContent = untilDate.toLocaleDateString('zh-CN');
+                                                    } else {
+                                                        untilCell.textContent = dateStr;
+                                                    }
+                                                } else {
+                                                    untilCell.textContent = dateStr;
+                                                }
+                                            } else {
+                                                untilCell.textContent = dateStr;
+                                            }
+                                        } catch (e) {
+                                            console.error("Error parsing date:", e);
+                                            untilCell.textContent = String(timestamp);
+                                        }
+                                    }
+                                    
+                                    // 如果有效期小于当前日期且是有效的Date对象，使用红色文本
+                                    if (untilDate instanceof Date && untilDate < new Date()) {
+                                        untilCell.style.color = 'red';
+                                    }
+                                } else {
+                                    untilCell.textContent = '未知';
+                                }
+                                untilCell.style.padding = '8px';
+                                untilCell.style.borderBottom = '1px solid #ddd';
+                                
+                                // 状态
+                                const statusCell = document.createElement('td');
+                                statusCell.textContent = tokenQuota.token_info.healthy ? '正常' : '异常';
+                                statusCell.style.padding = '8px';
+                                statusCell.style.borderBottom = '1px solid #ddd';
+                                statusCell.style.color = tokenQuota.token_info.healthy ? 'green' : 'red';
+                                
+                                row.appendChild(nameCell);
+                                row.appendChild(licenseCell);
+                                row.appendChild(usedCell);
+                                row.appendChild(maxCell);
+                                row.appendChild(percentCell);
+                                row.appendChild(untilCell);
+                                row.appendChild(statusCell);
+                                
+                                tbody.appendChild(row);
+                            }
+                        });
+                        
+                        table.appendChild(tbody);
+                        container.appendChild(table);
+                    } else {
+                        container.innerHTML = '<p>没有可用的 Token 配额信息</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching all tokens quota:', error);
+                    document.getElementById('all-tokens-quota-container').innerHTML = '<p>获取所有 Token 配额信息失败</p>';
+                });
+        }
+        
+        function fetchJwtTokens() {
+            fetch('/tokens/info')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('jwt-tokens-container');
+                    container.innerHTML = '';
+                    
+                    if (data && data.tokens && data.tokens.length > 0) {
+                        const table = document.createElement('table');
+                        table.style.width = '100%';
+                        table.style.borderCollapse = 'collapse';
+                        table.style.marginTop = '10px';
+                        
+                        // 创建表头
+                        const thead = document.createElement('thead');
+                        const headerRow = document.createElement('tr');
+                        
+                        const headers = ['名称', '过期时间', '状态', '优先级'];
+                        headers.forEach(text => {
+                            const th = document.createElement('th');
+                            th.textContent = text;
+                            th.style.padding = '8px';
+                            th.style.borderBottom = '1px solid #ddd';
+                            th.style.textAlign = 'left';
+                            headerRow.appendChild(th);
+                        });
+                        
+                        thead.appendChild(headerRow);
+                        table.appendChild(thead);
+                        
+                        // 创建表格内容
+                        const tbody = document.createElement('tbody');
+                        
+                        data.tokens.forEach(token => {
+                            const row = document.createElement('tr');
+                            
+                            // 名称
+                            const nameCell = document.createElement('td');
+                            nameCell.textContent = token.name || '未命名';
+                            nameCell.style.padding = '8px';
+                            nameCell.style.borderBottom = '1px solid #ddd';
+                            
+                            // 过期时间
+                            const expiryCell = document.createElement('td');
+                            if (token.expires_at) {
+                                const expiryDate = new Date(token.expires_at * 1000); // 转换为毫秒
+                                expiryCell.textContent = expiryDate.toLocaleString('zh-CN');
+                                
+                                // 如果过期日期小于当前日期，使用红色文本
+                                if (expiryDate < new Date()) {
+                                    expiryCell.style.color = 'red';
+                                }
+                            } else {
+                                expiryCell.textContent = '未知';
+                            }
+                            expiryCell.style.padding = '8px';
+                            expiryCell.style.borderBottom = '1px solid #ddd';
+                            
+                            // 状态
+                            const statusCell = document.createElement('td');
+                            statusCell.textContent = token.healthy ? '正常' : '异常';
+                            statusCell.style.padding = '8px';
+                            statusCell.style.borderBottom = '1px solid #ddd';
+                            statusCell.style.color = token.healthy ? 'green' : 'red';
+                            
+                            // 优先级
+                            const priorityCell = document.createElement('td');
+                            priorityCell.textContent = token.priority || '1';
+                            priorityCell.style.padding = '8px';
+                            priorityCell.style.borderBottom = '1px solid #ddd';
+                            
+                            row.appendChild(nameCell);
+                            row.appendChild(expiryCell);
+                            row.appendChild(statusCell);
+                            row.appendChild(priorityCell);
+                            
+                            tbody.appendChild(row);
+                        });
+                        
+                        table.appendChild(tbody);
+                        container.appendChild(table);
+                    } else {
+                        container.innerHTML = '<p>没有可用的 JWT Tokens</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching JWT tokens:', error);
+                    document.getElementById('jwt-tokens-container').innerHTML = '<p>获取 Token 信息失败</p>';
+                });
+        }
+        
+        function fetchTokenExpiryMonitor() {
+            fetch('/stats/token-expiry')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('token-expiry-monitor-container');
+                    container.innerHTML = '';
+                    
+                    // 监控状态
+                    const statusDiv = document.createElement('div');
+                    statusDiv.style.marginBottom = '15px';
+                    statusDiv.innerHTML = `
+                        <p><strong>监控状态:</strong> 
+                            <span style="color: ${data.monitor_running ? 'green' : 'red'};">
+                                ${data.monitor_running ? '运行中' : '已停止'}
+                            </span>
+                        </p>
+                        <p><small>监控器每10分钟检查一次token过期时间，在token失效前1小时自动刷新</small></p>
+                    `;
+                    container.appendChild(statusDiv);
+                    
+                    // Token过期信息
+                    if (data.tokens_expiry && data.tokens_expiry.length > 0) {
+                        const table = document.createElement('table');
+                        table.style.width = '100%';
+                        table.style.borderCollapse = 'collapse';
+                        table.style.marginTop = '10px';
+                        
+                        // 创建表头
+                        const thead = document.createElement('thead');
+                        const headerRow = document.createElement('tr');
+                        
+                        const headers = ['Token名称', '过期时间', '状态', '预警'];
+                        headers.forEach(text => {
+                            const th = document.createElement('th');
+                            th.textContent = text;
+                            th.style.padding = '8px';
+                            th.style.borderBottom = '1px solid #ddd';
+                            th.style.textAlign = 'left';
+                            headerRow.appendChild(th);
+                        });
+                        
+                        thead.appendChild(headerRow);
+                        table.appendChild(thead);
+                        
+                        // 创建表格内容
+                        const tbody = document.createElement('tbody');
+                        
+                        data.tokens_expiry.forEach(token => {
+                            const row = document.createElement('tr');
+                            
+                            // Token名称
+                            const nameCell = document.createElement('td');
+                            nameCell.textContent = token.name || '未命名';
+                            nameCell.style.padding = '8px';
+                            nameCell.style.borderBottom = '1px solid #ddd';
+                            
+                            // 过期时间
+                            const expiryCell = document.createElement('td');
+                            expiryCell.textContent = token.expiry_str || '未知';
+                            expiryCell.style.padding = '8px';
+                            expiryCell.style.borderBottom = '1px solid #ddd';
+                            
+                            // 状态
+                            const statusCell = document.createElement('td');
+                            statusCell.textContent = token.healthy ? '正常' : '异常';
+                            statusCell.style.padding = '8px';
+                            statusCell.style.borderBottom = '1px solid #ddd';
+                            statusCell.style.color = token.healthy ? 'green' : 'red';
+                            
+                            // 预警
+                            const warningCell = document.createElement('td');
+                            let warningText = '正常';
+                            let warningColor = 'green';
+                            
+                            if (token.expired) {
+                                warningText = '已过期';
+                                warningColor = 'red';
+                            } else if (token.expires_soon) {
+                                warningText = '即将过期';
+                                warningColor = 'orange';
+                            }
+                            
+                            warningCell.textContent = warningText;
+                            warningCell.style.padding = '8px';
+                            warningCell.style.borderBottom = '1px solid #ddd';
+                            warningCell.style.color = warningColor;
+                            warningCell.style.fontWeight = 'bold';
+                            
+                            row.appendChild(nameCell);
+                            row.appendChild(expiryCell);
+                            row.appendChild(statusCell);
+                            row.appendChild(warningCell);
+                            
+                            tbody.appendChild(row);
+                        });
+                        
+                        table.appendChild(tbody);
+                        container.appendChild(table);
+                    } else {
+                        const noDataDiv = document.createElement('div');
+                        noDataDiv.innerHTML = '<p>没有可用的Token过期信息</p>';
+                        container.appendChild(noDataDiv);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching token expiry monitor:', error);
+                    document.getElementById('token-expiry-monitor-container').innerHTML = '<p>获取监控状态失败</p>';
+                });
+        }
+        
+        document.getElementById('auto-refresh').addEventListener('change', function() {
+            const seconds = parseInt(this.value);
+            
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+            
+            if (seconds > 0) {
+                refreshTimer = setInterval(fetchStats, seconds * 1000);
+            }
+        });
+        
+        // 初始加载
+        fetchStats();
+        fetchAllTokensQuota();
+        fetchTokenExpiryMonitor();
+    </script>
+</body>
+</html>
