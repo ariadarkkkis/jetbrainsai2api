@@ -2,12 +2,13 @@ package main
 
 import (
 	"bufio"
-	json "github.com/json-iterator/go"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	json "github.com/json-iterator/go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -50,7 +51,8 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 	processJetbrainsStream(resp, func(data map[string]any) bool {
 		eventType, _ := data["type"].(string)
 
-		if eventType == "Content" {
+		switch eventType {
+		case "Content":
 			content, _ := data["content"].(string)
 			if content == "" {
 				return true // Continue processing
@@ -80,7 +82,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 			respJSON, _ := json.Marshal(streamResp)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Flush()
-		} else if eventType == "FunctionCall" {
+		case "FunctionCall":
 			funcNameInterface := data["name"]
 			funcArgs, _ := data["content"].(string)
 
@@ -107,7 +109,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 					funcMap["arguments"] = currentArgs + funcArgs
 				}
 			}
-		} else if eventType == "FinishMetadata" {
+		case "FinishMetadata":
 			if currentTool != nil {
 				deltaPayload := map[string]any{
 					"tool_calls": []map[string]any{*currentTool},
@@ -154,11 +156,12 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 	processJetbrainsStream(resp, func(data map[string]any) bool {
 		eventType, _ := data["type"].(string)
 
-		if eventType == "Content" {
+		switch eventType {
+		case "Content":
 			if content, ok := data["content"].(string); ok {
 				contentParts = append(contentParts, content)
 			}
-		} else if eventType == "FunctionCall" {
+		case "FunctionCall":
 			funcNameInterface := data["name"]
 			funcArgs, _ := data["content"].(string)
 
@@ -174,7 +177,7 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 				currentFuncArgs = ""
 			}
 			currentFuncArgs += funcArgs
-		} else if eventType == "FinishMetadata" {
+		case "FinishMetadata":
 			if currentFuncName != "" {
 				toolCalls = append(toolCalls, ToolCall{
 					ID:   fmt.Sprintf("call_%s", uuid.New().String()),
