@@ -23,21 +23,6 @@ go run main.go
 go mod tidy
 ```
 
-### Python版本
-```bash
-# 安装依赖
-cd python
-pip install -r requirements.txt
-
-# 运行Python版本（默认端口7860）
-python main.py
-
-# 使用uvicorn运行（推荐）
-uvicorn main:app --host 0.0.0.0 --port 7860
-
-# 测试工具调用功能
-python testFC.py
-```
 
 ### 环境配置
 ```bash

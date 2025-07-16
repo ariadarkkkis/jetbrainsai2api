@@ -91,3 +91,152 @@ func streamLog(c *gin.Context) {
 	// Keep the connection open
 	<-c.Request.Context().Done()
 }
+
+func getTokenDisplayName(account *JetbrainsAccount) string {
+	if account.JWT != "" && len(account.JWT) > 10 {
+		return "Token ..." + account.JWT[len(account.JWT)-6:]
+	}
+	if account.LicenseID != "" && len(account.LicenseID) > 10 {
+		return "Token ..." + account.LicenseID[len(account.LicenseID)-6:]
+	}
+	return "Token Unknown"
+}
+
+func getLicenseDisplayName(account *JetbrainsAccount) string {
+	if account.Authorization != "" && len(account.Authorization) > 20 {
+		prefix := account.Authorization[:3]
+		suffix := account.Authorization[len(account.Authorization)-3:]
+		return prefix + "*" + suffix
+	}
+	return "Unknown"
+}
+
+func getAccountIdentifier(account *JetbrainsAccount) string {
+	if account.LicenseID != "" {
+		return account.LicenseID
+	}
+	return "with static JWT"
+}
+
+
+// Statistics functions
+func recordRequest(success bool, responseTime int64, model, account string) {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	requestStats.TotalRequests++
+	requestStats.LastRequestTime = time.Now()
+	requestStats.TotalResponseTime += responseTime
+
+	if success {
+		requestStats.SuccessfulRequests++
+	} else {
+		requestStats.FailedRequests++
+	}
+
+	// Add to history (keep last 1000 records)
+	record := RequestRecord{
+		Timestamp:    time.Now(),
+		Success:      success,
+		ResponseTime: responseTime,
+		Model:        model,
+		Account:      account,
+	}
+
+	requestStats.RequestHistory = append(requestStats.RequestHistory, record)
+	if len(requestStats.RequestHistory) > 1000 {
+		requestStats.RequestHistory = requestStats.RequestHistory[1:]
+	}
+}
+
+func getPeriodStats(hours int) PeriodStats {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+	var periodRequests int64
+	var periodSuccessful int64
+	var periodResponseTime int64
+
+	for _, record := range requestStats.RequestHistory {
+		if record.Timestamp.After(cutoff) {
+			periodRequests++
+			periodResponseTime += record.ResponseTime
+			if record.Success {
+				periodSuccessful++
+			}
+		}
+	}
+
+	stats := PeriodStats{
+		Requests: periodRequests,
+	}
+
+	if periodRequests > 0 {
+		stats.SuccessRate = float64(periodSuccessful) / float64(periodRequests) * 100
+		stats.AvgResponseTime = periodResponseTime / periodRequests
+		stats.QPS = float64(periodRequests) / float64(hours) / 3600.0
+	}
+
+	return stats
+}
+
+func getCurrentQPS() float64 {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Minute)
+	var recentRequests int64
+
+	for _, record := range requestStats.RequestHistory {
+		if record.Timestamp.After(cutoff) {
+			recentRequests++
+		}
+	}
+
+	return float64(recentRequests) / 60.0
+}
+
+func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
+	quotaData, err := getQuotaData(account)
+	if err != nil {
+		return &TokenInfo{
+			Name:   getTokenDisplayName(account),
+			Status: "错误",
+		}, err
+	}
+
+	dailyUsed, _ := quotaData["dailyUsed"].(float64)
+	dailyTotal, _ := quotaData["dailyTotal"].(float64)
+
+	var usageRate float64
+	if dailyTotal > 0 {
+		usageRate = (dailyUsed / dailyTotal) * 100
+	}
+
+	var expiryTime time.Time
+	if expiryTimeInt, ok := quotaData["expiryTime"]; ok {
+		if expiry, ok := expiryTimeInt.(time.Time); ok {
+			expiryTime = expiry
+		}
+	}
+
+	status := "正常"
+	if !account.HasQuota {
+		status = "配额不足"
+	} else if time.Now().Add(24 * time.Hour).After(expiryTime) {
+		status = "即将过期"
+	}
+
+	return &TokenInfo{
+		Name:       getTokenDisplayName(account),
+		License:    getLicenseDisplayName(account),
+		Used:       dailyUsed,
+		Total:      dailyTotal,
+		UsageRate:  usageRate,
+		ExpiryDate: expiryTime,
+		Status:     status,
+		HasQuota:   account.HasQuota,
+	}, nil
+}
