@@ -2,6 +2,19 @@ package main
 
 import "time"
 
+// JetbrainsQuotaResponse defines the structure for the JetBrains quota API response
+type JetbrainsQuotaResponse struct {
+	Current struct {
+		Current struct {
+			Amount string `json:"amount"`
+		} `json:"current"`
+		Maximum struct {
+			Amount string `json:"amount"`
+		} `json:"maximum"`
+	} `json:"current"`
+	Until string `json:"until"`
+}
+
 // Data structures
 type RequestStats struct {
 	TotalRequests      int64           `json:"total_requests"`

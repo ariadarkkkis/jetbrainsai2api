@@ -6,7 +6,9 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -16,6 +18,7 @@ const (
 	DefaultRequestTimeout = 30 * time.Second
 	QuotaCacheTime        = time.Hour
 	JWTRefreshTime        = 12 * time.Hour
+	StatsSaveInterval     = 1 * time.Minute
 )
 
 // Global variables
@@ -32,13 +35,14 @@ var (
 	statsMutex             sync.Mutex
 )
 
-
-
 func main() {
-	// 加载.env文件
+	// Load .env file
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
+
+	// Load statistics from file
+	loadStats()
 
 	// Initialize HTTP client
 	transport := &http.Transport{
@@ -53,13 +57,24 @@ func main() {
 
 	// Load configuration
 	modelsData = loadModels()
-	// Load the full config for internal model lookup
 	data, err := os.ReadFile("models.json")
 	if err == nil {
 		json.Unmarshal(data, &modelsConfig)
 	}
 	loadClientAPIKeys()
 	loadJetbrainsAccounts()
+
+	// Set up periodic saving of statistics
+	ticker := time.NewTicker(StatsSaveInterval)
+	go func() {
+		for range ticker.C {
+			log.Println("Periodically saving statistics...")
+			saveStats()
+		}
+	}()
+
+	// Set up graceful shutdown
+	setupGracefulShutdown()
 
 	// Start pprof server
 	go func() {
@@ -77,4 +92,15 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func setupGracefulShutdown() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		log.Println("Shutdown signal received, saving statistics before exiting...")
+		saveStats()
+		os.Exit(0)
+	}()
 }

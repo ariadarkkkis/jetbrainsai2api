@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // setJetbrainsHeaders sets the required headers for JetBrains API requests
@@ -83,13 +84,13 @@ func checkQuota(account *JetbrainsAccount) error {
 		return fmt.Errorf("quota check failed with status %d", resp.StatusCode)
 	}
 
-	var quotaData map[string]any
+	var quotaData JetbrainsQuotaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
 		account.HasQuota = false
 		return err
 	}
 
-	processQuotaData(quotaData, account)
+	processQuotaData(&quotaData, account)
 
 	return nil
 }
@@ -130,12 +131,23 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 	}
 
 	state, _ := data["state"].(string)
-	token, _ := data["token"].(string)
+	tokenStr, _ := data["token"].(string)
 
-	if state == "PAID" && token != "" {
-		account.JWT = token
+	if state == "PAID" && tokenStr != "" {
+		account.JWT = tokenStr
 		account.LastUpdated = float64(time.Now().Unix())
-		log.Printf("Successfully refreshed JWT for licenseId %s", account.LicenseID)
+
+		// Parse the JWT to get the expiration time
+		token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, jwt.MapClaims{})
+		if err != nil {
+			log.Printf("Warning: could not parse JWT: %v", err)
+		} else if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if exp, ok := claims["exp"].(float64); ok {
+				account.ExpiryTime = time.Unix(int64(exp), 0)
+			}
+		}
+
+		log.Printf("Successfully refreshed JWT for licenseId %s, expires at %s", account.LicenseID, account.ExpiryTime.Format(time.RFC3339))
 		return nil
 	}
 
@@ -189,8 +201,9 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 }
 
 // processQuotaData processes quota data and updates account status
-func processQuotaData(quotaData map[string]any, account *JetbrainsAccount) (dailyUsed, dailyTotal float64) {
-	dailyUsed, dailyTotal = extractQuotaUsage(quotaData)
+func processQuotaData(quotaData *JetbrainsQuotaResponse, account *JetbrainsAccount) {
+	dailyUsed, _ := strconv.ParseFloat(quotaData.Current.Current.Amount, 64)
+	dailyTotal, _ := strconv.ParseFloat(quotaData.Current.Maximum.Amount, 64)
 
 	if dailyTotal == 0 {
 		dailyTotal = 1 // Avoid division by zero
@@ -201,52 +214,10 @@ func processQuotaData(quotaData map[string]any, account *JetbrainsAccount) (dail
 		log.Printf("Account %s has no quota", getAccountIdentifier(account))
 	}
 
-	if expiryTime := parseExpiryTime(quotaData); !expiryTime.IsZero() {
-		account.ExpiryTime = expiryTime
-	}
-
 	account.LastQuotaCheck = float64(time.Now().Unix())
-	return dailyUsed, dailyTotal
 }
 
-func parseExpiryTime(quotaData map[string]any) time.Time {
-	if untilStr, ok := quotaData["until"].(string); ok {
-		parsedTime, err := time.Parse(time.RFC3339Nano, untilStr)
-		if err != nil {
-			parsedTime, err = time.Parse(time.RFC3339, untilStr)
-		}
-		if err == nil {
-			return parsedTime
-		}
-		log.Printf("Warning: could not parse 'until' date '%s': %v", untilStr, err)
-	}
-	return time.Time{}
-}
-
-func extractQuotaUsage(quotaData map[string]any) (float64, float64) {
-	var dailyUsed, dailyTotal float64
-
-	if current, ok := quotaData["current"].(map[string]any); ok {
-		if currentUsage, ok := current["current"].(map[string]any); ok {
-			if amountStr, ok := currentUsage["amount"].(string); ok {
-				if parsed, err := strconv.ParseFloat(amountStr, 64); err == nil {
-					dailyUsed = parsed
-				}
-			}
-		}
-
-		if maximum, ok := current["maximum"].(map[string]any); ok {
-			if amountStr, ok := maximum["amount"].(string); ok {
-				if parsed, err := strconv.ParseFloat(amountStr, 64); err == nil {
-					dailyTotal = parsed
-				}
-			}
-		}
-	}
-	return dailyUsed, dailyTotal
-}
-
-func getQuotaData(account *JetbrainsAccount) (map[string]any, error) {
+func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 	if err := ensureValidJWT(account); err != nil {
 		return nil, fmt.Errorf("failed to refresh JWT: %w", err)
 	}
@@ -274,7 +245,7 @@ func getQuotaData(account *JetbrainsAccount) (map[string]any, error) {
 		return nil, fmt.Errorf("quota check failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var quotaData map[string]any
+	var quotaData JetbrainsQuotaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
 		return nil, err
 	}
@@ -284,12 +255,9 @@ func getQuotaData(account *JetbrainsAccount) (map[string]any, error) {
 		log.Printf("JetBrains Quota API Response: %s", string(quotaJSON))
 	}
 
-	processQuotaData(quotaData, account)
+	processQuotaData(&quotaData, account)
 
-	quotaData["HasQuota"] = account.HasQuota
-	quotaData["expiryTime"] = account.ExpiryTime
-
-	return quotaData, nil
+	return &quotaData, nil
 }
 
 

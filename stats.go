@@ -2,10 +2,62 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"strconv"
 	"time"
 
+	json "github.com/json-iterator/go"
 	"github.com/gin-gonic/gin"
 )
+
+const statsFilePath = "stats.json"
+
+// saveStats saves the current request statistics to a JSON file.
+func saveStats() {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	data, err := json.MarshalIndent(requestStats, "", "  ")
+	if err != nil {
+		log.Printf("Error marshalling stats: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(statsFilePath, data, 0644); err != nil {
+		log.Printf("Error saving stats to %s: %v", statsFilePath, err)
+	}
+}
+
+// loadStats loads request statistics from a JSON file.
+func loadStats() {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+
+	data, err := os.ReadFile(statsFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("%s not found, starting with fresh statistics.", statsFilePath)
+			// Ensure history is not nil
+			requestStats.RequestHistory = []RequestRecord{}
+		} else {
+			log.Printf("Error loading %s: %v", statsFilePath, err)
+		}
+		return
+	}
+
+	if err := json.Unmarshal(data, &requestStats); err != nil {
+		log.Printf("Error unmarshalling %s: %v", statsFilePath, err)
+	} else {
+		log.Printf("Successfully loaded %d request records from %s", len(requestStats.RequestHistory), statsFilePath)
+	}
+
+	// Ensure history is not nil even after unmarshalling an old format
+	if requestStats.RequestHistory == nil {
+		requestStats.RequestHistory = []RequestRecord{}
+	}
+}
+
 
 // showStatsPage 显示统计页面
 func showStatsPage(c *gin.Context) {
@@ -36,7 +88,7 @@ func getStatsData(c *gin.Context) {
 				"used":       tokenInfo.Used,
 				"total":      tokenInfo.Total,
 				"usageRate":  tokenInfo.UsageRate,
-				"expiryDate": tokenInfo.ExpiryDate.Format("2006/1/2 14:30:20"),
+				"expiryDate": tokenInfo.ExpiryDate.Format("2006-01-02 15:04:05"),
 				"status":     tokenInfo.Status,
 			})
 		}
@@ -72,7 +124,7 @@ func getStatsData(c *gin.Context) {
 	// 返回JSON数据
 	c.JSON(200, gin.H{
 		"currentTime":  time.Now().Format("2006-01-02 15:04:05"),
-		"currentQPS":   fmt.Sprintf("%.2f", currentQPS),
+		"currentQPS":   fmt.Sprintf("%.3f", currentQPS),
 		"totalRecords": requestStats.TotalRequests,
 		"stats24h":     stats24h,
 		"stats7d":      stats7d,
@@ -158,6 +210,10 @@ func getPeriodStats(hours int) PeriodStats {
 	var periodSuccessful int64
 	var periodResponseTime int64
 
+	// Calculate requests in the last minute of the period for QPS
+	lastMinuteCutoff := time.Now().Add(-1 * time.Minute)
+	var lastMinuteRequests int64
+
 	for _, record := range requestStats.RequestHistory {
 		if record.Timestamp.After(cutoff) {
 			periodRequests++
@@ -165,6 +221,9 @@ func getPeriodStats(hours int) PeriodStats {
 			if record.Success {
 				periodSuccessful++
 			}
+		}
+		if record.Timestamp.After(lastMinuteCutoff) {
+			lastMinuteRequests++
 		}
 	}
 
@@ -175,8 +234,10 @@ func getPeriodStats(hours int) PeriodStats {
 	if periodRequests > 0 {
 		stats.SuccessRate = float64(periodSuccessful) / float64(periodRequests) * 100
 		stats.AvgResponseTime = periodResponseTime / periodRequests
-		stats.QPS = float64(periodRequests) / float64(hours) / 3600.0
 	}
+
+	// Calculate QPS based on the last minute of activity
+	stats.QPS = float64(lastMinuteRequests) / 60.0
 
 	return stats
 }
@@ -207,25 +268,18 @@ func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
 		}, err
 	}
 
-	dailyUsed, _ := quotaData["dailyUsed"].(float64)
-	dailyTotal, _ := quotaData["dailyTotal"].(float64)
+	dailyUsed, _ := strconv.ParseFloat(quotaData.Current.Current.Amount, 64)
+	dailyTotal, _ := strconv.ParseFloat(quotaData.Current.Maximum.Amount, 64)
 
 	var usageRate float64
 	if dailyTotal > 0 {
 		usageRate = (dailyUsed / dailyTotal) * 100
 	}
 
-	var expiryTime time.Time
-	if expiryTimeInt, ok := quotaData["expiryTime"]; ok {
-		if expiry, ok := expiryTimeInt.(time.Time); ok {
-			expiryTime = expiry
-		}
-	}
-
 	status := "正常"
 	if !account.HasQuota {
 		status = "配额不足"
-	} else if time.Now().Add(24 * time.Hour).After(expiryTime) {
+	} else if time.Now().Add(24 * time.Hour).After(account.ExpiryTime) {
 		status = "即将过期"
 	}
 
@@ -235,7 +289,7 @@ func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
 		Used:       dailyUsed,
 		Total:      dailyTotal,
 		UsageRate:  usageRate,
-		ExpiryDate: expiryTime,
+		ExpiryDate: account.ExpiryTime,
 		Status:     status,
 		HasQuota:   account.HasQuota,
 	}, nil
