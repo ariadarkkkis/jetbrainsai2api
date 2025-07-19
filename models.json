@@ -15,7 +15,7 @@
         "o1": "openai-o1",
         "gpt-4o": "openai-gpt-4o",
         "gpt-4.1": "openai-gpt4.1",
-        "gpt-4.1-mini": "openai-gpt-4.1-mini",
+        "gpt-4.1-mini": "openai-gpt4.1-mini",
         "gpt-4.1-nano": "openai-gpt4.1-nano"
     },
     "anthropic_model_mappings": {
