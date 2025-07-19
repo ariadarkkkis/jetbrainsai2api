@@ -18,7 +18,6 @@ const (
 	DefaultRequestTimeout = 30 * time.Second
 	QuotaCacheTime        = time.Hour
 	JWTRefreshTime        = 12 * time.Hour
-	StatsSaveInterval     = 1 * time.Minute
 )
 
 // Global variables
@@ -66,14 +65,8 @@ func main() {
 	loadClientAPIKeys()
 	loadJetbrainsAccounts()
 
-	// Set up periodic saving of statistics
-	ticker := time.NewTicker(StatsSaveInterval)
-	go func() {
-		for range ticker.C {
-			log.Println("Periodically saving statistics...")
-			saveStats()
-		}
-	}()
+	// Initialize request-triggered statistics saving
+	initRequestTriggeredSaving()
 
 	// Set up graceful shutdown
 	setupGracefulShutdown()

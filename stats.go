@@ -3,12 +3,26 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-const statsFilePath = "stats.json"
+const (
+	statsFilePath = "stats.json"
+	// 控制持久化频率，避免过于频繁的写操作
+	minSaveInterval = 5 * time.Second
+)
+
+// 用于控制异步持久化的变量
+var (
+	lastSaveTime   int64 // 上次保存的时间戳（原子操作）
+	pendingSave    int32 // 是否有待保存的数据（原子操作）
+	saveChan       chan bool
+	saveWorkerOnce sync.Once
+)
 
 // saveStats saves the current request statistics using the configured storage
 func saveStats() {
@@ -129,6 +143,50 @@ func getLicenseDisplayName(account *JetbrainsAccount) string {
 	return "Unknown"
 }
 
+// initRequestTriggeredSaving 初始化基于请求触发的持久化机制
+func initRequestTriggeredSaving() {
+	saveWorkerOnce.Do(func() {
+		saveChan = make(chan bool, 100) // 缓冲通道，避免阻塞
+		go saveWorker() // 启动异步保存工作协程
+	})
+}
+
+// saveWorker 异步保存工作协程
+func saveWorker() {
+	for range saveChan {
+		// 检查是否需要保存（防抖机制）
+		now := time.Now().Unix()
+		lastSave := atomic.LoadInt64(&lastSaveTime)
+		
+		if now-lastSave >= int64(minSaveInterval.Seconds()) {
+			// 执行实际的保存操作
+			saveStats()
+			atomic.StoreInt64(&lastSaveTime, now)
+			atomic.StoreInt32(&pendingSave, 0)
+		} else {
+			// 延迟保存
+			time.Sleep(minSaveInterval - time.Duration(now-lastSave)*time.Second)
+			saveStats()
+			atomic.StoreInt64(&lastSaveTime, time.Now().Unix())
+			atomic.StoreInt32(&pendingSave, 0)
+		}
+	}
+}
+
+// triggerAsyncSave 触发异步保存（非阻塞）
+func triggerAsyncSave() {
+	// 使用原子操作检查是否已有待保存的请求
+	if atomic.CompareAndSwapInt32(&pendingSave, 0, 1) {
+		select {
+		case saveChan <- true:
+			// 成功发送保存信号
+		default:
+			// 通道已满，重置状态
+			atomic.StoreInt32(&pendingSave, 0)
+		}
+	}
+}
+
 // Statistics functions
 func recordRequest(success bool, responseTime int64, model, account string) {
 	statsMutex.Lock()
@@ -157,6 +215,9 @@ func recordRequest(success bool, responseTime int64, model, account string) {
 	if len(requestStats.RequestHistory) > 1000 {
 		requestStats.RequestHistory = requestStats.RequestHistory[1:]
 	}
+
+	// 触发异步持久化
+	triggerAsyncSave()
 }
 
 func getPeriodStats(hours int) PeriodStats {
