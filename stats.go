@@ -20,7 +20,6 @@ func loadStats() {
 	loadStatsWithStorage()
 }
 
-
 // showStatsPage 显示统计页面
 func showStatsPage(c *gin.Context) {
 	// 提供静态HTML文件
@@ -70,7 +69,7 @@ func getStatsData(c *gin.Context) {
 
 		status := "正常"
 		warning := "正常"
-		if time.Now().Add(24 * time.Hour).After(expiryTime) {
+		if time.Now().Add(1 * time.Hour).After(expiryTime) {
 			status = "即将过期"
 			warning = "即将过期"
 		}
@@ -130,8 +129,6 @@ func getLicenseDisplayName(account *JetbrainsAccount) string {
 	return "Unknown"
 }
 
-
-
 // Statistics functions
 func recordRequest(success bool, responseTime int64, model, account string) {
 	statsMutex.Lock()
@@ -178,7 +175,8 @@ func getPeriodStats(hours int) PeriodStats {
 			if record.Success {
 				periodSuccessful++
 			}
-		}	}
+		}
+	}
 
 	stats := PeriodStats{
 		Requests: periodRequests,
