@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"github.com/bytedance/sonic"
 	"fmt"
 	"io"
 	"log"
@@ -63,29 +62,29 @@ func chatCompletions(c *gin.Context) {
 	startTime := time.Now()
 	var request ChatCompletionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		recordRequest(false, time.Since(startTime).Milliseconds(), "", "")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		recordFailureWithTimer(startTime, "", "")
+		respondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	modelConfig := getModelItem(request.Model)
 	if modelConfig == nil {
-		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, "")
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Model %s not found", request.Model)})
+		recordFailureWithTimer(startTime, request.Model, "")
+		respondWithError(c, http.StatusNotFound, fmt.Sprintf("Model %s not found", request.Model))
 		return
 	}
 
 	account, err := getNextJetbrainsAccount()
 	if err != nil {
-		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, "")
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+		recordFailureWithTimer(startTime, request.Model, "")
+		respondWithError(c, http.StatusTooManyRequests, err.Error())
 		return
 	}
 
 	accountIdentifier := getTokenDisplayName(account)
 
 	// Convert OpenAI format to JetBrains format
-	jetbrainsMessages, _ := openAIToJetbrainsMessages(request.Messages)
+	jetbrainsMessages := openAIToJetbrainsMessages(request.Messages)
 
 	var data []JetbrainsData
 	var tools []ToolFunction
@@ -94,7 +93,7 @@ func chatCompletions(c *gin.Context) {
 		for _, tool := range request.Tools {
 			tools = append(tools, tool.Function)
 		}
-		toolsJSON, _ := sonic.Marshal(tools)
+		toolsJSON, _ := marshalJSON(tools)
 		data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
 	}
 	// Ensure data is never nil - initialize as empty slice
@@ -111,10 +110,10 @@ func chatCompletions(c *gin.Context) {
 		Parameters: JetbrainsParameters{Data: data},
 	}
 
-	payloadBytes, err := sonic.Marshal(payload)
+	payloadBytes, err := marshalJSON(payload)
 	if err != nil {
-		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal request"})
+		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+		respondWithError(c, http.StatusInternalServerError, "Failed to marshal request")
 		return
 	}
 
@@ -124,8 +123,8 @@ func chatCompletions(c *gin.Context) {
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v7", bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+		respondWithError(c, http.StatusInternalServerError, "Failed to create request")
 		return
 	}
 
@@ -136,8 +135,8 @@ func chatCompletions(c *gin.Context) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to make request"})
+		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+		respondWithError(c, http.StatusInternalServerError, "Failed to make request")
 		return
 	}
 	defer resp.Body.Close()
@@ -157,7 +156,7 @@ func chatCompletions(c *gin.Context) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("API Error: Status %d, Body: %s", resp.StatusCode, string(body))
-		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
+		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
 		c.JSON(resp.StatusCode, gin.H{"error": string(body)})
 		return
 	}

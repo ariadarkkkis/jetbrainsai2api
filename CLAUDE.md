@@ -38,13 +38,11 @@ cp .env.example .env
   - JetBrains 账户轮询机制，自动处理 JWT 刷新和配额检查。
 - **模型映射系统** (`models.json`, `config.go`):
   - `models.json` 配置文件定义 API 模型 ID 到 JetBrains 内部模型的映射。
-  - 支持 Anthropic 风格的模型名称映射。
 - **API 端点兼容性** (`routes.go`):
   - **OpenAI 兼容**: `/v1/models`、`/v1/chat/completions`
-  - **Anthropic 兼容**: `/v1/messages`
   - 支持流式和非流式响应。
 - **消息格式转换** (`converter.go`):
-  - 在 OpenAI/Anthropic API 格式和 JetBrains 内部格式之间进行转换。
+  - 在 OpenAI API 格式和 JetBrains 内部格式之间进行转换。
 - **监控与统计** (`stats.go`, `static/index.html`):
   - Web 界面统计面板，通过 `/` 访问。
   - 实时 QPS 监控、请求成功率统计。

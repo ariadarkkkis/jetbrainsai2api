@@ -1,11 +1,12 @@
 package main
 
 import (
+	"github.com/bytedance/sonic"
 	"log"
 )
 
 // openAIToJetbrainsMessages converts OpenAI chat messages to JetBrains format
-func openAIToJetbrainsMessages(messages []ChatMessage) ([]JetbrainsMessage, map[string]string) {
+func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 	toolIDToFuncNameMap := make(map[string]string)
 	for _, msg := range messages {
 		if msg.Role == "assistant" && msg.ToolCalls != nil {
@@ -29,14 +30,23 @@ func openAIToJetbrainsMessages(messages []ChatMessage) ([]JetbrainsMessage, map[
 			})
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
-				firstToolCall := msg.ToolCalls[0]
-				toolIDToFuncNameMap[firstToolCall.ID] = firstToolCall.Function.Name
+				toolCall := msg.ToolCalls[0]
+
+				// 尝试解析参数，如果是一个 JSON 字符串，就解码它以获取原始的参数对象
+				var argsMap map[string]any
+				if err := sonic.UnmarshalString(toolCall.Function.Arguments, &argsMap); err == nil {
+					// 如果成功解码，重新编码以确保它是一个干净的 JSON
+					cleanArgs, _ := sonic.Marshal(argsMap)
+					toolCall.Function.Arguments = string(cleanArgs)
+				}
+				// 如果解码失败，我们假定它已经是我们想要的格式
+
 				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 					Type:    "assistant_message",
 					Content: textContent,
 					FunctionCall: &JetbrainsFunctionCall{
-						FunctionName: firstToolCall.Function.Name,
-						Content:      firstToolCall.Function.Arguments,
+						FunctionName: toolCall.Function.Name,
+						Content:      toolCall.Function.Arguments,
 					},
 				})
 			} else {
@@ -63,46 +73,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) ([]JetbrainsMessage, map[
 			})
 		}
 	}
-	return jetbrainsMessages, toolIDToFuncNameMap
+	return jetbrainsMessages
 }
 
-// convertAnthropicToOpenAI converts Anthropic message format to OpenAI format
-func convertAnthropicToOpenAI(request AnthropicMessageRequest) (ChatCompletionRequest, error) {
-	var openAIRequest ChatCompletionRequest
-
-	openAIRequest.Model = request.Model
-	openAIRequest.Stream = request.Stream
-	openAIRequest.Temperature = request.Temperature
-	openAIRequest.TopP = request.TopP
-
-	if request.MaxTokens > 0 {
-		openAIRequest.MaxTokens = &request.MaxTokens
-	}
-
-	// Convert messages
-	for _, msg := range request.Messages {
-		openAIMsg := ChatMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		}
-		openAIRequest.Messages = append(openAIRequest.Messages, openAIMsg)
-	}
-
-	// Convert tools if present
-	if request.Tools != nil {
-		for _, tool := range request.Tools {
-			openAITool := Tool{
-				Type: "function",
-				Function: ToolFunction{
-					Name:        tool.Name,
-					Description: tool.Description,
-					Parameters:  tool.InputSchema,
-				},
-			}
-			openAIRequest.Tools = append(openAIRequest.Tools, openAITool)
-		}
-	}
-
-	return openAIRequest, nil
-}
 

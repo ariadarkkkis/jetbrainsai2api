@@ -29,7 +29,6 @@ var (
 	accountRotationLock    sync.Mutex
 	modelsData             ModelsData
 	modelsConfig           ModelsConfig
-	anthropicModelMappings map[string]string
 	httpClient             *http.Client
 	requestStats           RequestStats
 	statsMutex             sync.Mutex
@@ -87,10 +86,7 @@ func main() {
 	r := setupRoutes()
 
 	log.Println("Starting JetBrains AI OpenAI Compatible API server...")
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "7860"
-	}
+	port := getEnvWithDefault("PORT", "7860")
 
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

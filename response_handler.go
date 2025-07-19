@@ -79,7 +79,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 				Choices: []StreamChoice{{Delta: deltaPayload}},
 			}
 
-			respJSON, _ := sonic.Marshal(streamResp)
+			respJSON, _ := marshalJSON(streamResp)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Flush()
 		case "FunctionCall":
@@ -121,7 +121,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 					Model:   request.Model,
 					Choices: []StreamChoice{{Delta: deltaPayload}},
 				}
-				respJSON, _ := sonic.Marshal(streamResp)
+				respJSON, _ := marshalJSON(streamResp)
 				fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 				c.Writer.Flush()
 			}
@@ -134,7 +134,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 				Choices: []StreamChoice{{Delta: map[string]any{}, FinishReason: stringPtr("tool_calls")}},
 			}
 
-			respJSON, _ := sonic.Marshal(finalResp)
+			respJSON, _ := marshalJSON(finalResp)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Write([]byte("data: [DONE]\n\n"))
 			c.Writer.Flush()
@@ -148,7 +148,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 
 // handleNonStreamingResponse handles non-streaming responses from the JetBrains API
 func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request ChatCompletionRequest, startTime time.Time, accountIdentifier string) {
-	var contentParts []string
+	var contentBuilder strings.Builder
 	var toolCalls []ToolCall
 	var currentFuncName string
 	var currentFuncArgs string
@@ -159,7 +159,7 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 		switch eventType {
 		case "Content":
 			if content, ok := data["content"].(string); ok {
-				contentParts = append(contentParts, content)
+				contentBuilder.WriteString(content)
 			}
 		case "FunctionCall":
 			funcNameInterface := data["name"]
@@ -193,10 +193,9 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 		return true // Continue processing
 	})
 
-	fullContent := strings.Join(contentParts, "")
 	message := ChatMessage{
 		Role:    "assistant",
-		Content: fullContent,
+		Content: contentBuilder.String(),
 	}
 
 	finishReason := "stop"
