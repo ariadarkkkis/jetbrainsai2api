@@ -131,6 +131,7 @@ func getLicenseDisplayName(account *JetbrainsAccount) string {
 }
 
 
+
 // Statistics functions
 func recordRequest(success bool, responseTime int64, model, account string) {
 	statsMutex.Lock()

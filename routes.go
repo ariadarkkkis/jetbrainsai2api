@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -66,6 +67,7 @@ func setupPublicRoutes(r *gin.Engine) {
 	r.GET("/", showStatsPage)
 	r.GET("/log", streamLog)
 	r.GET("/api/stats", getStatsData)
+	r.GET("/health", healthCheck)
 }
 
 // setupAPIRoutes 设置API路由（需要认证）
@@ -78,4 +80,15 @@ func setupAPIRoutes(r *gin.Engine) {
 		// Add Anthropic compatible endpoint
 		api.POST("/messages", anthropicMessages)
 	}
+}
+
+// healthCheck 健康检查端点
+func healthCheck(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"status": "healthy",
+		"service": "jetbrainsai2api",
+		"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+		"accounts": len(jetbrainsAccounts),
+		"valid_keys": len(validClientKeys),
+	})
 }

@@ -63,8 +63,22 @@ cp .env.example .env
 - `JETBRAINS_AUTHORIZATIONS`: JetBrains 授权 token（逗号分隔）。
 - `PORT`: 服务端口（默认 7860）。
 
-## 开发注意事项
+## 部署命令
 
-- **修改模型配置**: 编辑 `models.json` 文件添加新的模型映射，服务会自动加载配置。
-- **调试**: 设置 `GIN_MODE=debug` 环境变量以启用 Gin 的调试模式，从而在控制台查看详细日志。
-- **统计监控**: 访问 `http://localhost:7860` 查看服务状态和统计信息。
+### Docker 部署
+```bash
+# 构建 Docker 镜像
+docker build -t jetbrainsai2api .
+
+# 运行 Docker 容器
+docker run -p 7860:7860 \
+  -e TZ=Asia/Shanghai \
+  -e CLIENT_API_KEYS=your-api-key \
+  -e JETBRAINS_JWTS=your-jwt-token \
+  jetbrainsai2api
+```
+
+### HuggingFace Spaces 部署
+- Fork 项目到 GitHub
+- 在 HuggingFace Spaces 创建新的 Space (使用 Docker SDK)
+- 连接 GitHub 仓库并配置环境变量
