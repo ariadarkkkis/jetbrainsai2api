@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	json "github.com/json-iterator/go"
+	"github.com/bytedance/sonic"
 	"fmt"
 	"io"
 	"log"
@@ -85,7 +85,7 @@ func checkQuota(account *JetbrainsAccount) error {
 	}
 
 	var quotaData JetbrainsQuotaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
+	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
 		account.HasQuota = false
 		return err
 	}
@@ -100,7 +100,7 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 	log.Printf("Refreshing JWT for licenseId %s...", account.LicenseID)
 
 	payload := map[string]string{"licenseId": account.LicenseID}
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := sonic.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 	}
 
 	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return err
 	}
 
@@ -246,12 +246,12 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 	}
 
 	var quotaData JetbrainsQuotaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
+	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
 		return nil, err
 	}
 
 	if gin.Mode() == gin.DebugMode {
-		quotaJSON, _ := json.MarshalIndent(quotaData, "", "  ")
+		quotaJSON, _ := sonic.MarshalIndent(quotaData, "", "  ")
 		log.Printf("JetBrains Quota API Response: %s", string(quotaJSON))
 	}
 

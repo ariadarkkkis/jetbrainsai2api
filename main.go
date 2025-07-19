@@ -1,7 +1,7 @@
 package main
 
 import (
-	json "github.com/json-iterator/go"
+	"github.com/bytedance/sonic"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -41,7 +41,10 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	// Load statistics from file
+	// Initialize storage and load statistics
+	if err := initStorage(); err != nil {
+		log.Fatalf("Failed to initialize storage: %v", err)
+	}
 	loadStats()
 
 	// Initialize HTTP client
@@ -59,7 +62,7 @@ func main() {
 	modelsData = loadModels()
 	data, err := os.ReadFile("models.json")
 	if err == nil {
-		json.Unmarshal(data, &modelsConfig)
+		sonic.Unmarshal(data, &modelsConfig)
 	}
 	loadClientAPIKeys()
 	loadJetbrainsAccounts()

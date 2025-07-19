@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	json "github.com/json-iterator/go"
+	"github.com/bytedance/sonic"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,7 +27,7 @@ func processJetbrainsStream(resp *http.Response, onEvent func(event map[string]a
 
 		dataStr := line[6:]
 		var data map[string]any
-		if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+		if err := sonic.Unmarshal([]byte(dataStr), &data); err != nil {
 			log.Printf("Error unmarshalling stream event: %v", err)
 			continue
 		}
@@ -79,7 +79,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 				Choices: []StreamChoice{{Delta: deltaPayload}},
 			}
 
-			respJSON, _ := json.Marshal(streamResp)
+			respJSON, _ := sonic.Marshal(streamResp)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Flush()
 		case "FunctionCall":
@@ -121,7 +121,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 					Model:   request.Model,
 					Choices: []StreamChoice{{Delta: deltaPayload}},
 				}
-				respJSON, _ := json.Marshal(streamResp)
+				respJSON, _ := sonic.Marshal(streamResp)
 				fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 				c.Writer.Flush()
 			}
@@ -134,7 +134,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 				Choices: []StreamChoice{{Delta: map[string]any{}, FinishReason: stringPtr("tool_calls")}},
 			}
 
-			respJSON, _ := json.Marshal(finalResp)
+			respJSON, _ := sonic.Marshal(finalResp)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Write([]byte("data: [DONE]\n\n"))
 			c.Writer.Flush()

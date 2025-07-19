@@ -1,7 +1,7 @@
 package main
 
 import (
-	json "github.com/json-iterator/go"
+	"github.com/bytedance/sonic"
 	"log"
 	"os"
 	"strings"
@@ -20,10 +20,10 @@ func loadModels() ModelsData {
 	}
 
 	var config ModelsConfig
-	if err := json.Unmarshal(data, &config); err != nil {
+	if err := sonic.Unmarshal(data, &config); err != nil {
 		// Try old format (string array)
 		var modelIDs []string
-		if err := json.Unmarshal(data, &modelIDs); err != nil {
+		if err := sonic.Unmarshal(data, &modelIDs); err != nil {
 			log.Printf("Error parsing models.json: %v", err)
 			anthropicModelMappings = make(map[string]string)
 			return result

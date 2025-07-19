@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	json "github.com/json-iterator/go"
+	"github.com/bytedance/sonic"
 	"fmt"
 	"io"
 	"log"
@@ -94,7 +94,7 @@ func chatCompletions(c *gin.Context) {
 		for _, tool := range request.Tools {
 			tools = append(tools, tool.Function)
 		}
-		toolsJSON, _ := json.Marshal(tools)
+		toolsJSON, _ := sonic.Marshal(tools)
 		data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
 	}
 	// Ensure data is never nil - initialize as empty slice
@@ -111,7 +111,7 @@ func chatCompletions(c *gin.Context) {
 		Parameters: JetbrainsParameters{Data: data},
 	}
 
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := sonic.Marshal(payload)
 	if err != nil {
 		recordRequest(false, time.Since(startTime).Milliseconds(), request.Model, accountIdentifier)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal request"})

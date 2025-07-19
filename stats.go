@@ -2,60 +2,22 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"strconv"
 	"time"
 
-	json "github.com/json-iterator/go"
 	"github.com/gin-gonic/gin"
 )
 
 const statsFilePath = "stats.json"
 
-// saveStats saves the current request statistics to a JSON file.
+// saveStats saves the current request statistics using the configured storage
 func saveStats() {
-	statsMutex.Lock()
-	defer statsMutex.Unlock()
-
-	data, err := json.MarshalIndent(requestStats, "", "  ")
-	if err != nil {
-		log.Printf("Error marshalling stats: %v", err)
-		return
-	}
-
-	if err := os.WriteFile(statsFilePath, data, 0644); err != nil {
-		log.Printf("Error saving stats to %s: %v", statsFilePath, err)
-	}
+	saveStatsWithStorage()
 }
 
-// loadStats loads request statistics from a JSON file.
+// loadStats loads request statistics using the configured storage
 func loadStats() {
-	statsMutex.Lock()
-	defer statsMutex.Unlock()
-
-	data, err := os.ReadFile(statsFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			log.Printf("%s not found, starting with fresh statistics.", statsFilePath)
-			// Ensure history is not nil
-			requestStats.RequestHistory = []RequestRecord{}
-		} else {
-			log.Printf("Error loading %s: %v", statsFilePath, err)
-		}
-		return
-	}
-
-	if err := json.Unmarshal(data, &requestStats); err != nil {
-		log.Printf("Error unmarshalling %s: %v", statsFilePath, err)
-	} else {
-		log.Printf("Successfully loaded %d request records from %s", len(requestStats.RequestHistory), statsFilePath)
-	}
-
-	// Ensure history is not nil even after unmarshalling an old format
-	if requestStats.RequestHistory == nil {
-		requestStats.RequestHistory = []RequestRecord{}
-	}
+	loadStatsWithStorage()
 }
 
 
