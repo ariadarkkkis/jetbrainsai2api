@@ -82,7 +82,7 @@ func chatCompletions(c *gin.Context) {
 		return
 	}
 
-	accountIdentifier := getAccountIdentifier(account)
+	accountIdentifier := getTokenDisplayName(account)
 
 	// Convert OpenAI format to JetBrains format
 	jetbrainsMessages, _ := openAIToJetbrainsMessages(request.Messages)
@@ -149,7 +149,7 @@ func chatCompletions(c *gin.Context) {
 	}
 
 	if resp.StatusCode == 477 {
-		log.Printf("Account %s has no quota (received 477)", getAccountIdentifier(account))
+		log.Printf("Account %s has no quota (received 477)", getTokenDisplayName(account))
 		account.HasQuota = false
 		account.LastQuotaCheck = float64(time.Now().Unix())
 	}

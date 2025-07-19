@@ -33,7 +33,7 @@ func handleJWTExpiredAndRetry(req *http.Request, account *JetbrainsAccount) (*ht
 
 	if resp.StatusCode == 401 && account.LicenseID != "" {
 		resp.Body.Close()
-		log.Printf("JWT for %s expired, refreshing...", getAccountIdentifier(account))
+		log.Printf("JWT for %s expired, refreshing...", getTokenDisplayName(account))
 		if err := refreshJetbrainsJWT(account); err != nil {
 			return nil, err
 		}
@@ -211,7 +211,7 @@ func processQuotaData(quotaData *JetbrainsQuotaResponse, account *JetbrainsAccou
 
 	account.HasQuota = dailyUsed < dailyTotal
 	if !account.HasQuota {
-		log.Printf("Account %s has no quota", getAccountIdentifier(account))
+		log.Printf("Account %s has no quota", getTokenDisplayName(account))
 	}
 
 	account.LastQuotaCheck = float64(time.Now().Unix())

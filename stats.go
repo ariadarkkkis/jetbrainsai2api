@@ -144,30 +144,28 @@ func streamLog(c *gin.Context) {
 	<-c.Request.Context().Done()
 }
 
-func getTokenDisplayName(account *JetbrainsAccount) string {
-	if account.JWT != "" && len(account.JWT) > 10 {
-		return "Token ..." + account.JWT[len(account.JWT)-6:]
+func truncateString(s string, prefixLen, suffixLen int, replacement string) string {
+	if len(s) > prefixLen+suffixLen {
+		return s[:prefixLen] + replacement + s[len(s)-suffixLen:]
 	}
-	if account.LicenseID != "" && len(account.LicenseID) > 10 {
-		return "Token ..." + account.LicenseID[len(account.LicenseID)-6:]
+	return s
+}
+
+func getTokenDisplayName(account *JetbrainsAccount) string {
+	if account.JWT != "" {
+		return truncateString(account.JWT, 0, 6, "Token ...")
+	}
+	if account.LicenseID != "" {
+		return truncateString(account.LicenseID, 0, 6, "Token ...")
 	}
 	return "Token Unknown"
 }
 
 func getLicenseDisplayName(account *JetbrainsAccount) string {
-	if account.Authorization != "" && len(account.Authorization) > 20 {
-		prefix := account.Authorization[:3]
-		suffix := account.Authorization[len(account.Authorization)-3:]
-		return prefix + "*" + suffix
+	if account.Authorization != "" {
+		return truncateString(account.Authorization, 3, 3, "*")
 	}
 	return "Unknown"
-}
-
-func getAccountIdentifier(account *JetbrainsAccount) string {
-	if account.LicenseID != "" {
-		return account.LicenseID
-	}
-	return "with static JWT"
 }
 
 
