@@ -125,7 +125,7 @@ func getStatsData(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"currentTime":  time.Now().Format("2006-01-02 15:04:05"),
 		"currentQPS":   fmt.Sprintf("%.3f", currentQPS),
-		"totalRecords": requestStats.TotalRequests,
+		"totalRecords": len(requestStats.RequestHistory),
 		"stats24h":     stats24h,
 		"stats7d":      stats7d,
 		"stats30d":     stats30d,
@@ -210,10 +210,6 @@ func getPeriodStats(hours int) PeriodStats {
 	var periodSuccessful int64
 	var periodResponseTime int64
 
-	// Calculate requests in the last minute of the period for QPS
-	lastMinuteCutoff := time.Now().Add(-1 * time.Minute)
-	var lastMinuteRequests int64
-
 	for _, record := range requestStats.RequestHistory {
 		if record.Timestamp.After(cutoff) {
 			periodRequests++
@@ -221,11 +217,7 @@ func getPeriodStats(hours int) PeriodStats {
 			if record.Success {
 				periodSuccessful++
 			}
-		}
-		if record.Timestamp.After(lastMinuteCutoff) {
-			lastMinuteRequests++
-		}
-	}
+		}	}
 
 	stats := PeriodStats{
 		Requests: periodRequests,
@@ -236,8 +228,8 @@ func getPeriodStats(hours int) PeriodStats {
 		stats.AvgResponseTime = periodResponseTime / periodRequests
 	}
 
-	// Calculate QPS based on the last minute of activity
-	stats.QPS = float64(lastMinuteRequests) / 60.0
+	// Calculate QPS based on the entire period
+	stats.QPS = float64(periodRequests) / (float64(hours) * 3600.0)
 
 	return stats
 }

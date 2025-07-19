@@ -70,3 +70,4 @@ ehthumbs.db
 Thumbs.db
 .claude/settings.local.json
 .env.test
+stats.json
