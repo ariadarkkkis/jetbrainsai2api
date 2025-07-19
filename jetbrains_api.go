@@ -8,11 +8,14 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var jwtRefreshMutex sync.Mutex
 
 // setJetbrainsHeaders sets the required headers for JetBrains API requests
 func setJetbrainsHeaders(req *http.Request, jwt string) {
@@ -34,9 +37,16 @@ func handleJWTExpiredAndRetry(req *http.Request, account *JetbrainsAccount) (*ht
 	if resp.StatusCode == 401 && account.LicenseID != "" {
 		resp.Body.Close()
 		log.Printf("JWT for %s expired, refreshing...", getTokenDisplayName(account))
-		if err := refreshJetbrainsJWT(account); err != nil {
-			return nil, err
+		
+		jwtRefreshMutex.Lock()
+		// Check if another goroutine already refreshed the JWT
+		if req.Header.Get("grazie-authenticate-jwt") == account.JWT {
+			if err := refreshJetbrainsJWT(account); err != nil {
+				jwtRefreshMutex.Unlock()
+				return nil, err
+			}
 		}
+		jwtRefreshMutex.Unlock()
 
 		req.Header.Set("grazie-authenticate-jwt", account.JWT)
 		return httpClient.Do(req)
@@ -48,7 +58,13 @@ func handleJWTExpiredAndRetry(req *http.Request, account *JetbrainsAccount) (*ht
 // ensureValidJWT ensures that the account has a valid JWT
 func ensureValidJWT(account *JetbrainsAccount) error {
 	if account.JWT == "" && account.LicenseID != "" {
-		return refreshJetbrainsJWT(account)
+		jwtRefreshMutex.Lock()
+		defer jwtRefreshMutex.Unlock()
+		
+		// Double-check after acquiring lock
+		if account.JWT == "" {
+			return refreshJetbrainsJWT(account)
+		}
 	}
 	return nil
 }
