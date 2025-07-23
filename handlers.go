@@ -88,7 +88,7 @@ func chatCompletions(c *gin.Context) {
 
 	var data []JetbrainsData
 	var tools []ToolFunction
-	if request.Tools != nil {
+	if len(request.Tools) > 0 {
 		data = append(data, JetbrainsData{Type: "json", FQDN: "llm.parameters.functions"})
 		for _, tool := range request.Tools {
 			tools = append(tools, tool.Function)
@@ -167,4 +167,3 @@ func chatCompletions(c *gin.Context) {
 		handleNonStreamingResponse(c, resp, request, startTime, accountIdentifier)
 	}
 }
-
