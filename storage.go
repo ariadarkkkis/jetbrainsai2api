@@ -84,7 +84,7 @@ func NewRedisStorage(redisURL string) (*RedisStorage, error) {
 }
 
 func (rs *RedisStorage) SaveStats(stats *RequestStats) error {
-	data, err := sonic.Marshal(stats)
+	data, err := marshalJSON(stats)
 	if err != nil {
 		return err
 	}
