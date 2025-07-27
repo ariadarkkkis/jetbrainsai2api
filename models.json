@@ -17,5 +17,9 @@
         "gpt-4.1": "openai-gpt4.1",
         "gpt-4.1-mini": "openai-gpt4.1-mini",
         "gpt-4.1-nano": "openai-gpt4.1-nano"
+    },
+    "anthropic_model_mappings": {
+        "claude-sonnet-4-20250514": "claude-4-sonnet",
+        "claude-3-5-haiku-20241022": "claude-3-5-haiku"
     }
 }

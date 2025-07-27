@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"github.com/bytedance/sonic"
 	"fmt"
 	"io"
@@ -115,10 +116,18 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 	log.Printf("Refreshing JWT for licenseId %s...", account.LicenseID)
 
 	payload := map[string]string{"licenseId": account.LicenseID}
-	req, err := createJetbrainsRequest("POST", "https://api.jetbrains.ai/auth/jetbrains-jwt/provide-access/license/v2", payload, account.Authorization)
+	payloadBytes, err := sonic.Marshal(payload)
 	if err != nil {
 		return err
 	}
+
+	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/auth/jetbrains-jwt/provide-access/license/v2", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("authorization", "Bearer "+account.Authorization)
 	setJetbrainsHeaders(req, "")
 
 	resp, err := httpClient.Do(req)

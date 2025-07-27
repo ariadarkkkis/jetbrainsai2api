@@ -4,6 +4,7 @@ import (
 	"github.com/bytedance/sonic"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,7 @@ func loadModels() ModelsData {
 	data, err := os.ReadFile("models.json")
 	if err != nil {
 		log.Printf("Error loading models.json: %v", err)
+		anthropicModelMappings = make(map[string]string)
 		return result
 	}
 
@@ -23,13 +25,20 @@ func loadModels() ModelsData {
 		var modelIDs []string
 		if err := sonic.Unmarshal(data, &modelIDs); err != nil {
 			log.Printf("Error parsing models.json: %v", err)
-				return result
+			anthropicModelMappings = make(map[string]string)
+			return result
 		}
 		// Convert to new format
 		config.Models = make(map[string]string)
 		for _, modelID := range modelIDs {
 			config.Models[modelID] = modelID
 		}
+		config.AnthropicModelMappings = make(map[string]string)
+	}
+
+	anthropicModelMappings = config.AnthropicModelMappings
+	if anthropicModelMappings == nil {
+		anthropicModelMappings = make(map[string]string)
 	}
 
 	now := time.Now().Unix()
@@ -42,22 +51,31 @@ func loadModels() ModelsData {
 		})
 	}
 
-	log.Printf("Loaded %d models from models.json", len(config.Models))
+	log.Printf("Loaded %d model mappings from models.json", len(anthropicModelMappings))
 	return result
 }
 
 // loadClientAPIKeys loads client API keys from environment variables
 func loadClientAPIKeys() {
-	keys := parseEnvList(os.Getenv("CLIENT_API_KEYS"))
-	validClientKeys = make(map[string]bool)
-	for _, key := range keys {
-		validClientKeys[key] = true
-	}
+	keysEnv := os.Getenv("CLIENT_API_KEYS")
+	if keysEnv != "" {
+		keys := strings.Split(keysEnv, ",")
+		validClientKeys = make(map[string]bool)
+		for _, key := range keys {
+			key = strings.TrimSpace(key)
+			if key != "" {
+				validClientKeys[key] = true
+			}
+		}
 
-	if len(validClientKeys) == 0 {
-		log.Println("Warning: CLIENT_API_KEYS environment variable is empty")
+		if len(validClientKeys) == 0 {
+			log.Println("Warning: CLIENT_API_KEYS environment variable is empty")
+		} else {
+			log.Printf("Successfully loaded %d client API keys from environment", len(validClientKeys))
+		}
 	} else {
-		log.Printf("Successfully loaded %d client API keys from environment", len(validClientKeys))
+		log.Println("Error: CLIENT_API_KEYS environment variable not found")
+		validClientKeys = make(map[string]bool)
 	}
 }
 
@@ -66,8 +84,21 @@ func loadJetbrainsAccounts() {
 	licenseIDsEnv := os.Getenv("JETBRAINS_LICENSE_IDS")
 	authorizationsEnv := os.Getenv("JETBRAINS_AUTHORIZATIONS")
 
-	licenseIDs := parseEnvList(licenseIDsEnv)
-	authorizations := parseEnvList(authorizationsEnv)
+	var licenseIDs, authorizations []string
+
+	if licenseIDsEnv != "" {
+		licenseIDs = strings.Split(licenseIDsEnv, ",")
+		for i, id := range licenseIDs {
+			licenseIDs[i] = strings.TrimSpace(id)
+		}
+	}
+
+	if authorizationsEnv != "" {
+		authorizations = strings.Split(authorizationsEnv, ",")
+		for i, auth := range authorizations {
+			authorizations[i] = strings.TrimSpace(auth)
+		}
+	}
 
 	maxLen := len(licenseIDs)
 	if len(authorizations) > maxLen {

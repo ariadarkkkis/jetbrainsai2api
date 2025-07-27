@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,7 +29,11 @@ func setupRoutes() *gin.Engine {
 
 // getGinMode 获取Gin运行模式
 func getGinMode() string {
-	return getEnvWithDefault("GIN_MODE", gin.ReleaseMode)
+	ginMode := os.Getenv("GIN_MODE")
+	if ginMode == "" {
+		return gin.ReleaseMode
+	}
+	return ginMode
 }
 
 // setupMiddleware 设置中间件
@@ -72,6 +77,8 @@ func setupAPIRoutes(r *gin.Engine) {
 	{
 		api.GET("/models", listModels)
 		api.POST("/chat/completions", chatCompletions)
+		// Add Anthropic compatible endpoint
+		api.POST("/messages", anthropicMessages)
 	}
 }
 

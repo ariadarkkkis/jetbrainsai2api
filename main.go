@@ -18,6 +18,7 @@ const (
 	DefaultRequestTimeout = 30 * time.Second
 	QuotaCacheTime        = time.Hour
 	JWTRefreshTime        = 12 * time.Hour
+	StatsSaveInterval     = 1 * time.Minute
 )
 
 // Global variables
@@ -28,6 +29,7 @@ var (
 	accountRotationLock    sync.Mutex
 	modelsData             ModelsData
 	modelsConfig           ModelsConfig
+	anthropicModelMappings map[string]string
 	httpClient             *http.Client
 	requestStats           RequestStats
 	statsMutex             sync.Mutex
@@ -65,8 +67,14 @@ func main() {
 	loadClientAPIKeys()
 	loadJetbrainsAccounts()
 
-	// Initialize request-triggered statistics saving
-	initRequestTriggeredSaving()
+	// Set up periodic saving of statistics
+	ticker := time.NewTicker(StatsSaveInterval)
+	go func() {
+		for range ticker.C {
+			log.Println("Periodically saving statistics...")
+			saveStats()
+		}
+	}()
 
 	// Set up graceful shutdown
 	setupGracefulShutdown()
@@ -79,7 +87,10 @@ func main() {
 	r := setupRoutes()
 
 	log.Println("Starting JetBrains AI OpenAI Compatible API server...")
-	port := getEnvWithDefault("PORT", "7860")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "7860"
+	}
 
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

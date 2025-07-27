@@ -79,6 +79,7 @@ type ModelList struct {
 
 type ModelsConfig struct {
 	Models                 map[string]string `json:"models"`
+	AnthropicModelMappings map[string]string `json:"anthropic_model_mappings"`
 }
 
 type ChatMessage struct {
@@ -151,6 +152,63 @@ type StreamResponse struct {
 	Choices []StreamChoice `json:"choices"`
 }
 
+// Anthropic compatible structures
+type AnthropicContentBlock struct {
+	Type      string         `json:"type"`
+	Text      string         `json:"text,omitempty"`
+	ToolUseID string         `json:"tool_use_id,omitempty"`
+	Content   any            `json:"content,omitempty"`
+	ID        string         `json:"id,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Input     map[string]any `json:"input,omitempty"`
+}
+
+type AnthropicMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"`
+}
+
+type AnthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+type AnthropicMessageRequest struct {
+	Model         string             `json:"model"`
+	Messages      []AnthropicMessage `json:"messages"`
+	System        any                `json:"system,omitempty"`
+	MaxTokens     int                `json:"max_tokens"`
+	Stream        bool               `json:"stream"`
+	Temperature   *float64           `json:"temperature,omitempty"`
+	TopP          *float64           `json:"top_p,omitempty"`
+	Tools         []AnthropicTool    `json:"tools,omitempty"`
+	StopSequences []string           `json:"stop_sequences,omitempty"`
+}
+
+type AnthropicUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+type AnthropicResponseContent struct {
+	Type  string         `json:"type"`
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
+	Text  string         `json:"text,omitempty"`
+}
+
+type AnthropicResponseMessage struct {
+	ID           string                     `json:"id"`
+	Type         string                     `json:"type"`
+	Role         string                     `json:"role"`
+	Model        string                     `json:"model"`
+	Content      []AnthropicResponseContent `json:"content"`
+	StopReason   *string                    `json:"stop_reason"`
+	StopSequence *string                    `json:"stop_sequence"`
+	Usage        AnthropicUsage             `json:"usage"`
+}
 
 type JetbrainsMessage struct {
 	Type         string                 `json:"type"`
