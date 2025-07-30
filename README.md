@@ -8,6 +8,9 @@
 - **多种认证方式**: 支持 Bearer token 和 `x-api-key` 头部认证
 - **账户轮询机制**: 自动处理 JWT 刷新和配额检查
 - **模型映射系统**: 通过 `models.json` 配置文件灵活映射模型
+- **工具调用支持**: 完整支持 OpenAI 工具调用 API，自动验证和转换工具参数
+- **智能工具验证**: 自动验证工具参数名称和结构，确保 JetBrains API 兼容性
+- **参数转换优化**: 智能简化复杂嵌套参数，支持 anyOf/oneOf/allOf 等复杂 JSON Schema
 - **实时监控**: Web 界面统计面板，QPS 监控和配额预警
 - **流式响应**: 支持流式和非流式输出
 - **数据持久化**: 统计数据自动保存到 `stats.json`
@@ -82,6 +85,32 @@ curl -H "Authorization: Bearer your-api-key" \
   http://localhost:7860/v1/chat/completions
 ```
 
+### 工具调用 (Function Calling)
+```bash
+curl -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-4-sonnet",
+    "messages": [{"role": "user", "content": "What is the weather like in Beijing?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather information",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string", "description": "City name"}
+          },
+          "required": ["location"]
+        }
+      }
+    }],
+    "tool_choice": "auto"
+  }' \
+  http://localhost:7860/v1/chat/completions
+```
+
 ## 监控和统计
 
 - **Web 界面**: 访问 `http://localhost:7860/` 查看实时统计面板
@@ -127,11 +156,27 @@ go mod tidy
 2. 在 HuggingFace Spaces 创建新的 Space (使用 Docker SDK)
 3. 连接 GitHub 仓库并配置环境变量
 
+## 工具调用特性
+
+### 智能参数验证
+- **参数名称验证**: 自动检查工具参数名称是否符合 JetBrains API 要求（最大64字符，仅支持字母数字和 `_.-`）
+- **复杂结构简化**: 智能处理 `anyOf`、`oneOf`、`allOf` 等复杂 JSON Schema 结构
+- **嵌套对象优化**: 对于过于复杂的嵌套参数，自动转换为字符串格式以确保兼容性
+
+### 自动转换功能
+- **参数名称转换**: 自动修正不符合规范的参数名称
+- **结构优化**: 对于超过10个属性的复杂工具，自动简化为单一字符串参数
+- **类型适配**: 将不兼容的参数类型转换为 JetBrains AI 支持的格式
+
+### 调试信息
+在开发模式下（`GIN_MODE=debug`），系统会输出详细的工具验证和转换日志，帮助开发者理解转换过程。
+
 ## 故障排除
 
 - **JWT 过期**: 服务会自动刷新 JWT token，检查许可证配置
 - **配额不足**: 查看统计面板中的配额信息，考虑添加更多账户
 - **模型不可用**: 检查 `models.json` 中的模型映射配置
+- **工具调用失败**: 检查工具参数是否符合 JetBrains API 规范，启用调试模式查看详细日志
 
 ## 许可证
 

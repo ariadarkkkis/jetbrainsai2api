@@ -41,10 +41,11 @@ GIN_MODE=release ./jetbrainsai2api
 ### 项目文件结构
 - `main.go`: 主程序入口，HTTP 服务器和全局配置初始化
 - `routes.go`: API 路由定义和中间件配置
-- `handlers.go`: HTTP 请求处理器，包含认证逻辑
+- `handlers.go`: HTTP 请求处理器，包含认证逻辑和工具调用处理
 - `jetbrains_api.go`: JetBrains API 交互和账户管理
 - `converter.go`: OpenAI 与 JetBrains API 格式转换
 - `response_handler.go`: 响应处理，支持流式和非流式输出
+- `tools_validator.go`: 工具参数验证和转换，确保 JetBrains API 兼容性
 - `models.go`: 数据结构定义
 - `config.go`: 配置文件加载（models.json）
 - `stats.go`: 统计数据收集和管理
@@ -65,6 +66,12 @@ GIN_MODE=release ./jetbrainsai2api
   - **OpenAI 兼容**: `/v1/models`、`/v1/chat/completions`
   - 支持流式和非流式响应
   - 内置监控端点：`/api/stats`、`/api/health`
+- **工具调用与验证** (`tools_validator.go`, `handlers.go`):
+  - 完整支持 OpenAI 工具调用 API (Function Calling)
+  - 智能工具参数验证和转换，确保 JetBrains API 兼容性
+  - 自动处理复杂 JSON Schema 结构（anyOf/oneOf/allOf）
+  - 参数名称规范化和结构优化
+  - 强制工具使用机制，提高工具调用成功率
 - **消息格式转换** (`converter.go`):
   - 在 OpenAI API 格式和 JetBrains 内部格式之间进行双向转换
   - 支持系统消息、用户消息等多种消息类型
@@ -112,6 +119,11 @@ GIN_MODE=release ./jetbrainsai2api
 - **JWT 过期**: 服务会自动刷新 JWT token，检查许可证配置
 - **配额不足**: 查看统计面板中的配额信息，考虑添加更多账户
 - **模型不可用**: 检查 `models.json` 中的模型映射配置
+- **工具调用失败**: 
+  - 检查工具参数名称是否符合规范（最大64字符，仅支持字母数字和 `_.-`）
+  - 启用调试模式 `GIN_MODE=debug` 查看详细的工具验证和转换日志
+  - 复杂嵌套参数会自动简化，检查转换后的参数结构
+  - 确保 `tool_choice` 参数正确设置（支持 "auto", "required", "any" 等）
 
 ## 部署命令
 

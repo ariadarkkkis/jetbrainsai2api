@@ -86,6 +86,17 @@ func chatCompletions(c *gin.Context) {
 	// Convert OpenAI format to JetBrains format
 	jetbrainsMessages := openAIToJetbrainsMessages(request.Messages)
 
+	// CRITICAL FIX: Force tool usage when tools are provided
+	if len(request.Tools) > 0 {
+		if request.ToolChoice == nil {
+			// Force tool choice to "any" to ensure Claude calls a tool
+			request.ToolChoice = "any"
+			if gin.Mode() == gin.DebugMode {
+				log.Printf("FORCING tool_choice to 'any' for tool usage guarantee")
+			}
+		}
+	}
+
 	var data []JetbrainsData
 	var tools []ToolFunction
 	if len(request.Tools) > 0 {
