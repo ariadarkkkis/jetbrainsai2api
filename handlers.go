@@ -89,12 +89,43 @@ func chatCompletions(c *gin.Context) {
 	var data []JetbrainsData
 	var tools []ToolFunction
 	if len(request.Tools) > 0 {
-		data = append(data, JetbrainsData{Type: "json", FQDN: "llm.parameters.functions"})
-		for _, tool := range request.Tools {
-			tools = append(tools, tool.Function)
+		// Validate and transform tools for JetBrains API compatibility
+		validatedTools, err := validateAndTransformTools(request.Tools)
+		if err != nil {
+			recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+			respondWithError(c, http.StatusBadRequest, fmt.Sprintf("Tool validation failed: %v", err))
+			return
 		}
-		toolsJSON, _ := marshalJSON(tools)
-		data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
+
+		if len(validatedTools) > 0 {
+			data = append(data, JetbrainsData{Type: "json", FQDN: "llm.parameters.functions"})
+
+			// 从validatedTools中提取ToolFunction
+			for _, tool := range validatedTools {
+				tools = append(tools, tool.Function)
+			}
+
+			toolsJSON, err := marshalJSON(tools)
+			if err != nil {
+				recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+				respondWithError(c, http.StatusInternalServerError, "Failed to marshal tools")
+				return
+			}
+
+			if gin.Mode() == gin.DebugMode {
+				log.Printf("Transformed tools for JetBrains API: %s", string(toolsJSON))
+			}
+
+			data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
+
+			// Enhance messages to encourage tool usage if needed
+			if shouldForceToolUse(request) {
+				jetbrainsMessages = openAIToJetbrainsMessages(enhancePromptForToolUse(request.Messages, request.Tools))
+				if gin.Mode() == gin.DebugMode {
+					log.Printf("Enhanced messages for tool usage")
+				}
+			}
+		}
 	}
 	// Ensure data is never nil - initialize as empty slice
 	if data == nil {
@@ -118,7 +149,14 @@ func chatCompletions(c *gin.Context) {
 	}
 
 	if gin.Mode() == gin.DebugMode {
-		log.Printf("Sending payload to JetBrains API: %s", string(payloadBytes))
+		log.Printf("=== JetBrains API Request Debug ===")
+		log.Printf("Model: %s -> %s", request.Model, internalModel)
+		log.Printf("Tools count: %d", len(request.Tools))
+		log.Printf("Tool choice: %v", request.ToolChoice)
+		log.Printf("Enhanced messages: %t", shouldForceToolUse(request))
+		log.Printf("Payload size: %d bytes", len(payloadBytes))
+		log.Printf("Full payload: %s", string(payloadBytes))
+		log.Printf("=== End Debug ===")
 	}
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v7", bytes.NewBuffer(payloadBytes))
@@ -155,9 +193,21 @@ func chatCompletions(c *gin.Context) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("API Error: Status %d, Body: %s", resp.StatusCode, string(body))
+		errorMsg := string(body)
+		log.Printf("JetBrains API Error: Status %d, Body: %s", resp.StatusCode, errorMsg)
+		log.Printf("Request payload was: %s", string(payloadBytes))
+
 		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
-		c.JSON(resp.StatusCode, gin.H{"error": string(body)})
+
+		// Provide more specific error messages
+		if resp.StatusCode == 400 {
+			c.JSON(resp.StatusCode, gin.H{
+				"error":   fmt.Sprintf("Bad Request to JetBrains API: %s", errorMsg),
+				"details": "This might be due to invalid tool parameters or schema format",
+			})
+		} else {
+			c.JSON(resp.StatusCode, gin.H{"error": errorMsg})
+		}
 		return
 	}
 

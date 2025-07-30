@@ -78,7 +78,7 @@ type ModelList struct {
 }
 
 type ModelsConfig struct {
-	Models                 map[string]string `json:"models"`
+	Models map[string]string `json:"models"`
 }
 
 type ChatMessage struct {
@@ -107,6 +107,7 @@ type ChatCompletionRequest struct {
 	MaxTokens   *int          `json:"max_tokens,omitempty"`
 	TopP        *float64      `json:"top_p,omitempty"`
 	Tools       []Tool        `json:"tools,omitempty"`
+	ToolChoice  any           `json:"tool_choice,omitempty"`
 	Stop        any           `json:"stop,omitempty"`
 	ServiceTier string        `json:"service_tier,omitempty"`
 }
@@ -150,7 +151,6 @@ type StreamResponse struct {
 	Model   string         `json:"model"`
 	Choices []StreamChoice `json:"choices"`
 }
-
 
 type JetbrainsMessage struct {
 	Type         string                 `json:"type"`

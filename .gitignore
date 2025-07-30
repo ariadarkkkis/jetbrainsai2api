@@ -71,3 +71,4 @@ Thumbs.db
 .claude/settings.local.json
 .env.test
 stats.json
+report.json

@@ -111,6 +111,17 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 			}
 		case "FinishMetadata":
 			if currentTool != nil {
+				// Validate the tool call arguments before sending
+				if funcMap, ok := (*currentTool)["function"].(map[string]any); ok {
+					if args, ok := funcMap["arguments"].(string); ok && args != "" {
+						// Try to validate JSON format
+						var argsTest map[string]any
+						if err := sonic.Unmarshal([]byte(args), &argsTest); err != nil {
+							log.Printf("Warning: Tool call arguments are not valid JSON: %v", err)
+						}
+					}
+				}
+
 				deltaPayload := map[string]any{
 					"tool_calls": []map[string]any{*currentTool},
 				}
@@ -179,14 +190,22 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 			currentFuncArgs += funcArgs
 		case "FinishMetadata":
 			if currentFuncName != "" {
-				toolCalls = append(toolCalls, ToolCall{
+				toolCall := ToolCall{
 					ID:   fmt.Sprintf("call_%s", uuid.New().String()),
 					Type: "function",
 					Function: Function{
 						Name:      currentFuncName,
 						Arguments: currentFuncArgs,
 					},
-				})
+				}
+
+				// Validate the tool call before adding it
+				if err := validateToolCallResponse(toolCall); err != nil {
+					log.Printf("Warning: Invalid tool call response: %v", err)
+					// Still add it but log the issue
+				}
+
+				toolCalls = append(toolCalls, toolCall)
 			}
 			return false // Stop processing
 		}
