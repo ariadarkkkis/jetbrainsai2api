@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"
 )
 
@@ -57,10 +56,6 @@ func parseEnvList(envVar string) []string {
 	return result
 }
 
-// marshalJSON wraps sonic.Marshal for consistent error handling
-func marshalJSON(v interface{}) ([]byte, error) {
-	return sonic.Marshal(v)
-}
 
 // respondWithError sends a JSON error response
 func respondWithError(c *gin.Context, code int, message string) {

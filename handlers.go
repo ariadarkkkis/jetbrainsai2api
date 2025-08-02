@@ -57,7 +57,7 @@ func listModels(c *gin.Context) {
 	c.JSON(http.StatusOK, modelList)
 }
 
-// chatCompletions 处理聊天完成请求
+// chatCompletions handles chat completion requests
 func chatCompletions(c *gin.Context) {
 	startTime := time.Now()
 	var request ChatCompletionRequest
@@ -80,16 +80,33 @@ func chatCompletions(c *gin.Context) {
 		respondWithError(c, http.StatusTooManyRequests, err.Error())
 		return
 	}
+	defer func() {
+		// Return the account to the pool when the function exits
+		select {
+		case accountPool <- account:
+			// Returned successfully
+		default:
+			// Pool is full, which shouldn't happen if managed correctly.
+			log.Printf("Warning: account pool is full. Could not return account.")
+		}
+	}()
 
 	accountIdentifier := getTokenDisplayName(account)
 
-	// Convert OpenAI format to JetBrains format
-	jetbrainsMessages := openAIToJetbrainsMessages(request.Messages)
+	// Convert OpenAI format to JetBrains format with caching
+	messagesCacheKey := generateMessagesCacheKey(request.Messages)
+	jetbrainsMessagesAny, found := messageConversionCache.Get(messagesCacheKey)
+	var jetbrainsMessages []JetbrainsMessage
+	if found {
+		jetbrainsMessages = jetbrainsMessagesAny.([]JetbrainsMessage)
+	} else {
+		jetbrainsMessages = openAIToJetbrainsMessages(request.Messages)
+		messageConversionCache.Set(messagesCacheKey, jetbrainsMessages, 10*time.Minute)
+	}
 
 	// CRITICAL FIX: Force tool usage when tools are provided
 	if len(request.Tools) > 0 {
 		if request.ToolChoice == nil {
-			// Force tool choice to "any" to ensure Claude calls a tool
 			request.ToolChoice = "any"
 			if gin.Mode() == gin.DebugMode {
 				log.Printf("FORCING tool_choice to 'any' for tool usage guarantee")
@@ -100,36 +117,37 @@ func chatCompletions(c *gin.Context) {
 	var data []JetbrainsData
 	var tools []ToolFunction
 	if len(request.Tools) > 0 {
-		// Validate and transform tools for JetBrains API compatibility
-		validatedTools, err := validateAndTransformTools(request.Tools)
-		if err != nil {
-			recordFailureWithTimer(startTime, request.Model, accountIdentifier)
-			respondWithError(c, http.StatusBadRequest, fmt.Sprintf("Tool validation failed: %v", err))
-			return
+		toolsCacheKey := generateToolsCacheKey(request.Tools)
+		validatedToolsAny, found := toolsValidationCache.Get(toolsCacheKey)
+		var validatedTools []Tool
+		if found {
+			validatedTools = validatedToolsAny.([]Tool)
+		} else {
+			var validationErr error
+			validatedTools, validationErr = validateAndTransformTools(request.Tools)
+			if validationErr != nil {
+				recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+				respondWithError(c, http.StatusBadRequest, fmt.Sprintf("Tool validation failed: %v", validationErr))
+				return
+			}
+			toolsValidationCache.Set(toolsCacheKey, validatedTools, 30*time.Minute)
 		}
 
 		if len(validatedTools) > 0 {
 			data = append(data, JetbrainsData{Type: "json", FQDN: "llm.parameters.functions"})
-
-			// 从validatedTools中提取ToolFunction
 			for _, tool := range validatedTools {
 				tools = append(tools, tool.Function)
 			}
-
-			toolsJSON, err := marshalJSON(tools)
-			if err != nil {
+			toolsJSON, marshalErr := marshalJSON(tools)
+			if marshalErr != nil {
 				recordFailureWithTimer(startTime, request.Model, accountIdentifier)
 				respondWithError(c, http.StatusInternalServerError, "Failed to marshal tools")
 				return
 			}
-
 			if gin.Mode() == gin.DebugMode {
 				log.Printf("Transformed tools for JetBrains API: %s", string(toolsJSON))
 			}
-
 			data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
-
-			// Enhance messages to encourage tool usage if needed
 			if shouldForceToolUse(request) {
 				jetbrainsMessages = openAIToJetbrainsMessages(enhancePromptForToolUse(request.Messages, request.Tools))
 				if gin.Mode() == gin.DebugMode {
@@ -138,16 +156,14 @@ func chatCompletions(c *gin.Context) {
 			}
 		}
 	}
-	// Ensure data is never nil - initialize as empty slice
 	if data == nil {
 		data = []JetbrainsData{}
 	}
 
-	// Use internal model name for JetBrains API call
 	internalModel := getInternalModelName(request.Model)
 	payload := JetbrainsPayload{
 		Prompt:     "ij.chat.request.new-chat-on-start",
-		Profile:    internalModel, // Use internal model name
+		Profile:    internalModel,
 		Chat:       JetbrainsChat{Messages: jetbrainsMessages},
 		Parameters: JetbrainsParameters{Data: data},
 	}
@@ -162,11 +178,7 @@ func chatCompletions(c *gin.Context) {
 	if gin.Mode() == gin.DebugMode {
 		log.Printf("=== JetBrains API Request Debug ===")
 		log.Printf("Model: %s -> %s", request.Model, internalModel)
-		log.Printf("Tools count: %d", len(request.Tools))
-		log.Printf("Tool choice: %v", request.ToolChoice)
-		log.Printf("Enhanced messages: %t", shouldForceToolUse(request))
 		log.Printf("Payload size: %d bytes", len(payloadBytes))
-		log.Printf("Full payload: %s", string(payloadBytes))
 		log.Printf("=== End Debug ===")
 	}
 
@@ -190,10 +202,8 @@ func chatCompletions(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// Output JetBrains API response status and headers
 	if gin.Mode() == gin.DebugMode {
 		log.Printf("JetBrains API Response Status: %d", resp.StatusCode)
-		log.Printf("JetBrains API Response Headers: %+v", resp.Header)
 	}
 
 	if resp.StatusCode == 477 {
@@ -206,19 +216,8 @@ func chatCompletions(c *gin.Context) {
 		body, _ := io.ReadAll(resp.Body)
 		errorMsg := string(body)
 		log.Printf("JetBrains API Error: Status %d, Body: %s", resp.StatusCode, errorMsg)
-		log.Printf("Request payload was: %s", string(payloadBytes))
-
 		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
-
-		// Provide more specific error messages
-		if resp.StatusCode == 400 {
-			c.JSON(resp.StatusCode, gin.H{
-				"error":   fmt.Sprintf("Bad Request to JetBrains API: %s", errorMsg),
-				"details": "This might be due to invalid tool parameters or schema format",
-			})
-		} else {
-			c.JSON(resp.StatusCode, gin.H{"error": errorMsg})
-		}
+		c.JSON(resp.StatusCode, gin.H{"error": errorMsg})
 		return
 	}
 

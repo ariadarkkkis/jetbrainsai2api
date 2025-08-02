@@ -70,43 +70,13 @@ func ensureValidJWT(account *JetbrainsAccount) error {
 
 // checkQuota checks the quota for a given JetBrains account
 func checkQuota(account *JetbrainsAccount) error {
-	if err := ensureValidJWT(account); err != nil {
-		return err
-	}
-
-	if account.JWT == "" {
-		account.HasQuota = false
-		return nil
-	}
-
-	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/quota/get", nil)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Length", "0")
-	setJetbrainsHeaders(req, account.JWT)
-
-	resp, err := handleJWTExpiredAndRetry(req, account)
+	quotaData, err := getQuotaData(account)
 	if err != nil {
 		account.HasQuota = false
 		return err
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		account.HasQuota = false
-		return fmt.Errorf("quota check failed with status %d", resp.StatusCode)
-	}
-
-	var quotaData JetbrainsQuotaResponse
-	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
-		account.HasQuota = false
-		return err
-	}
-
-	processQuotaData(&quotaData, account)
-
+	processQuotaData(quotaData, account)
 	return nil
 }
 
@@ -161,50 +131,44 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 	return fmt.Errorf("JWT refresh failed: invalid response state %s", state)
 }
 
-// getNextJetbrainsAccount gets the next available JetBrains account
+// getNextJetbrainsAccount gets the next available JetBrains account from the pool
 func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 	if len(jetbrainsAccounts) == 0 {
 		return nil, fmt.Errorf("service unavailable: no JetBrains accounts configured")
 	}
 
-	accountRotationLock.Lock()
-	defer accountRotationLock.Unlock()
+	select {
+	case account := <-accountPool:
+		// Defer re-queueing the account
+		defer func() {
+			accountPool <- account
+		}()
+		
+		// 检查JWT是否需要刷新
+		if account.LicenseID != "" {
+			if account.JWT == "" || time.Now().After(account.ExpiryTime.Add(-JWTRefreshTime)) {
+				if err := refreshJetbrainsJWT(account); err != nil {
+					log.Printf("Failed to refresh JWT for %s: %v", getTokenDisplayName(account), err)
+					return nil, err // Return error to retry with another account
+				}
+			}
+		}
 
-	for i := 0; i < len(jetbrainsAccounts); i++ {
-		account := &jetbrainsAccounts[currentAccountIndex]
-		currentAccountIndex = (currentAccountIndex + 1) % len(jetbrainsAccounts)
-
-		now := time.Now().Unix()
-		isQuotaStale := float64(now)-account.LastQuotaCheck > QuotaCacheTime.Seconds()
-
-		if account.HasQuota && isQuotaStale {
-			checkQuota(account)
+		// 检查配额
+		if err := checkQuota(account); err != nil {
+			log.Printf("Failed to check quota for %s: %v", getTokenDisplayName(account), err)
+			return nil, err // Return error to retry
 		}
 
 		if account.HasQuota {
-			if account.LicenseID != "" {
-				isJWTStale := float64(now)-account.LastUpdated > JWTRefreshTime.Seconds()
-				if account.JWT == "" || isJWTStale {
-					if err := refreshJetbrainsJWT(account); err != nil {
-						log.Printf("Failed to refresh JWT: %v", err)
-						continue
-					}
-					if !account.HasQuota {
-						checkQuota(account)
-						if !account.HasQuota {
-							continue
-						}
-					}
-				}
-			}
-
-			if account.JWT != "" {
-				return account, nil
-			}
+			return account, nil
 		}
-	}
+		
+		return nil, fmt.Errorf("account %s is over quota", getTokenDisplayName(account))
 
-	return nil, fmt.Errorf("all JetBrains accounts are over quota or invalid")
+	case <-time.After(10 * time.Second):
+		return nil, fmt.Errorf("timed out waiting for an available JetBrains account")
+	}
 }
 
 // processQuotaData processes quota data and updates account status
@@ -233,6 +197,15 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 		return nil, fmt.Errorf("account has no JWT")
 	}
 
+	// 检查缓存
+	quotaCacheMutex.RLock()
+	cacheKey := account.JWT
+	if cachedInfo, found := accountQuotaCache[cacheKey]; found && time.Since(cachedInfo.LastAccess) < QuotaCacheTime {
+		quotaCacheMutex.RUnlock()
+		return cachedInfo.QuotaData, nil
+	}
+	quotaCacheMutex.RUnlock()
+
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/quota/get", nil)
 	if err != nil {
 		return nil, err
@@ -249,6 +222,12 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		// 如果是401，则JWT可能已失效，从缓存中删除
+		if resp.StatusCode == 401 {
+			quotaCacheMutex.Lock()
+			delete(accountQuotaCache, cacheKey)
+			quotaCacheMutex.Unlock()
+		}
 		return nil, fmt.Errorf("quota check failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -256,6 +235,14 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&quotaData); err != nil {
 		return nil, err
 	}
+
+	// 更新缓存
+	quotaCacheMutex.Lock()
+	accountQuotaCache[cacheKey] = &CachedQuotaInfo{
+		QuotaData:  &quotaData,
+		LastAccess: time.Now(),
+	}
+	quotaCacheMutex.Unlock()
 
 	if gin.Mode() == gin.DebugMode {
 		quotaJSON, _ := sonic.MarshalIndent(quotaData, "", "  ")

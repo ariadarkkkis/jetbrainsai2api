@@ -15,6 +15,12 @@ type JetbrainsQuotaResponse struct {
 	Until string `json:"until"`
 }
 
+// CachedQuotaInfo defines the structure for cached quota information
+type CachedQuotaInfo struct {
+	QuotaData  *JetbrainsQuotaResponse
+	LastAccess time.Time
+}
+
 // Data structures
 type RequestStats struct {
 	TotalRequests      int64           `json:"total_requests"`

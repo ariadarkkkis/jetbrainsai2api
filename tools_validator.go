@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const (
@@ -14,13 +15,29 @@ const (
 	ParamNamePattern   = "^[a-zA-Z0-9_.-]{1,64}$"
 )
 
-var paramNameRegex = regexp.MustCompile(ParamNamePattern)
+var (
+	paramNameRegex = regexp.MustCompile(ParamNamePattern)
+	// 缓存已验证的工具定义，避免重复验证
+	validatedToolsCache = make(map[string][]Tool)
+	validationCacheMutex sync.RWMutex
+)
 
 // validateAndTransformTools 验证并转换工具定义以符合JetBrains API要求
 func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	if len(tools) == 0 {
 		return tools, nil
 	}
+
+	// 生成缓存键
+	cacheKey := generateToolsCacheKey(tools)
+	
+	// 检查缓存
+	validationCacheMutex.RLock()
+	if cached, exists := validatedToolsCache[cacheKey]; exists {
+		validationCacheMutex.RUnlock()
+		return cached, nil
+	}
+	validationCacheMutex.RUnlock()
 
 	log.Printf("=== TOOL VALIDATION DEBUG START ===")
 	log.Printf("Original tools count: %d", len(tools))
@@ -65,6 +82,19 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	log.Printf("Final validated tools count: %d", len(validatedTools))
 	log.Printf("Final validated tools: %s", toJSONString(validatedTools))
 	log.Printf("=== TOOL VALIDATION DEBUG END ===")
+	
+	// 缓存验证结果
+	validationCacheMutex.Lock()
+	validatedToolsCache[cacheKey] = validatedTools
+	// 限制缓存大小，避免内存泄漏
+	if len(validatedToolsCache) > 100 {
+		// 清理最旧的缓存项
+		for k := range validatedToolsCache {
+			delete(validatedToolsCache, k)
+			break
+		}
+	}
+	validationCacheMutex.Unlock()
 	
 	return validatedTools, nil
 }

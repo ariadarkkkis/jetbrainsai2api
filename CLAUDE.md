@@ -8,13 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 开发命令
 
-### Go 版本
+### 本地开发
 ```bash
 # 构建可执行文件
 go build -o jetbrainsai2api *.go
 
-# 运行 Go 版本（默认端口 7860）
+# 运行服务（默认端口 7860）
 ./jetbrainsai2api
+
+# 开发模式运行（带调试信息）
+GIN_MODE=debug ./jetbrainsai2api
+
+# 生产模式运行
+GIN_MODE=release ./jetbrainsai2api
 
 # 运行测试
 go test ./...
@@ -28,12 +34,22 @@ go mod tidy
 # 复制并编辑环境变量文件
 cp .env.example .env
 # 编辑 .env 文件，配置必要的 API 密钥和账户信息
+```
 
-# 开发模式运行（带调试信息）
-GIN_MODE=debug ./jetbrainsai2api
+### Docker 部署
+```bash
+# 构建 Docker 镜像
+docker build -t jetbrainsai2api .
 
-# 生产模式运行
-GIN_MODE=release ./jetbrainsai2api
+# 运行 Docker 容器
+docker run -p 7860:7860 \
+  -e TZ=Asia/Shanghai \
+  -e CLIENT_API_KEYS=your-api-key \
+  -e JETBRAINS_JWTS=your-jwt-token \
+  jetbrainsai2api
+
+# 使用 docker-compose
+docker-compose up -d
 ```
 
 ## 核心架构
