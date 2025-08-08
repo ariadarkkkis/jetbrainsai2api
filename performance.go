@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"expvar"
 	"fmt"
 	"runtime"
@@ -53,6 +54,10 @@ var (
 	cacheMissesVar     = expvar.NewInt("cache_misses_total")
 	toolValidationsVar = expvar.NewInt("tool_validations_total")
 	avgResponseTimeVar = expvar.NewFloat("avg_response_time_ms")
+
+	// 监控控制
+	monitorCtx    context.Context
+	monitorCancel context.CancelFunc
 )
 
 // RecordHTTPRequest 记录HTTP请求
@@ -174,6 +179,12 @@ func GetMetricsString() string {
 	metrics.mu.RLock()
 	defer metrics.mu.RUnlock()
 
+	// 安全计算错误率，避免除零错误
+	errorRate := 0.0
+	if metrics.httpRequests > 0 {
+		errorRate = float64(metrics.httpErrors) / float64(metrics.httpRequests) * 100
+	}
+
 	return fmt.Sprintf(`=== 性能指标统计 ===
 HTTP请求:
 - 总请求数: %d
@@ -204,7 +215,7 @@ HTTP请求:
 `,
 		metrics.httpRequests,
 		metrics.httpErrors,
-		float64(metrics.httpErrors)/float64(metrics.httpRequests)*100,
+		errorRate,
 		metrics.avgResponseTime,
 
 		metrics.cacheHits,
@@ -240,6 +251,9 @@ func GetQPS() float64 {
 
 // StartMetricsMonitor 启动性能监控
 func StartMetricsMonitor() {
+	// 创建带取消的 context，解决 goroutine 泄漏问题
+	monitorCtx, monitorCancel = context.WithCancel(context.Background())
+
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -261,9 +275,19 @@ func StartMetricsMonitor() {
 					fmt.Printf("%s\n", GetMetricsString())
 					fmt.Printf("====================\n")
 				}
+			case <-monitorCtx.Done():
+				// 收到停止信号，优雅退出监控 goroutine
+				return
 			}
 		}
 	}()
+}
+
+// StopMetricsMonitor 停止性能监控
+func StopMetricsMonitor() {
+	if monitorCancel != nil {
+		monitorCancel()
+	}
 }
 
 // 初始化性能监控
