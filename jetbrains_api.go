@@ -137,8 +137,15 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		return nil, fmt.Errorf("service unavailable: no JetBrains accounts configured")
 	}
 
+	accountWaitStart := time.Now()
 	select {
 	case account := <-accountPool:
+		// 记录账户池等待时间
+		waitDuration := time.Since(accountWaitStart)
+		if waitDuration > 100*time.Millisecond { // 只记录超过100ms的等待
+			RecordAccountPoolWait(waitDuration)
+		}
+		
 		// Defer re-queueing the account
 		defer func() {
 			accountPool <- account
@@ -149,6 +156,7 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 			if account.JWT == "" || time.Now().After(account.ExpiryTime.Add(-JWTRefreshTime)) {
 				if err := refreshJetbrainsJWT(account); err != nil {
 					log.Printf("Failed to refresh JWT for %s: %v", getTokenDisplayName(account), err)
+					RecordAccountPoolError()
 					return nil, err // Return error to retry with another account
 				}
 			}
@@ -157,6 +165,7 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		// 检查配额
 		if err := checkQuota(account); err != nil {
 			log.Printf("Failed to check quota for %s: %v", getTokenDisplayName(account), err)
+			RecordAccountPoolError()
 			return nil, err // Return error to retry
 		}
 
@@ -167,6 +176,7 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		return nil, fmt.Errorf("account %s is over quota", getTokenDisplayName(account))
 
 	case <-time.After(60 * time.Second):  // 增加到60秒，给账户更多时间释放
+		RecordAccountPoolError()
 		return nil, fmt.Errorf("timed out waiting for an available JetBrains account")
 	}
 }

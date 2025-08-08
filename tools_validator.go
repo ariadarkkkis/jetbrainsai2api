@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -20,6 +21,8 @@ var (
 	// 缓存已验证的工具定义，避免重复验证
 	validatedToolsCache = make(map[string][]Tool)
 	validationCacheMutex sync.RWMutex
+	// 预编译的参数转换缓存
+	paramTransformCache = NewCache()
 )
 
 // validateAndTransformTools 验证并转换工具定义以符合JetBrains API要求
@@ -266,6 +269,12 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 			"additionalProperties": false,
 		}, nil
 	}
+	
+	// Check cache first
+	cacheKey := generateParamsCacheKey(params)
+	if cached, found := paramTransformCache.Get(cacheKey); found {
+		return cached.(map[string]any), nil
+	}
 
 	// Handle the parameters object
 	result := make(map[string]any)
@@ -359,6 +368,9 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 	// Set additionalProperties to false to be more restrictive
 	result["additionalProperties"] = false
 
+	// Cache the result
+	paramTransformCache.Set(cacheKey, result, 30*time.Minute)
+	
 	return result, nil
 }
 

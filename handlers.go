@@ -60,9 +60,17 @@ func listModels(c *gin.Context) {
 // chatCompletions handles chat completion requests
 func chatCompletions(c *gin.Context) {
 	startTime := time.Now()
+	
+	// 记录性能指标开始
+	defer func() {
+		duration := time.Since(startTime)
+		RecordHTTPRequest(duration)
+	}()
+	
 	var request ChatCompletionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		recordFailureWithTimer(startTime, "", "")
+		RecordHTTPError()
 		respondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -99,9 +107,11 @@ func chatCompletions(c *gin.Context) {
 	var jetbrainsMessages []JetbrainsMessage
 	if found {
 		jetbrainsMessages = jetbrainsMessagesAny.([]JetbrainsMessage)
+		RecordCacheHit()
 	} else {
 		jetbrainsMessages = openAIToJetbrainsMessages(request.Messages)
 		messageConversionCache.Set(messagesCacheKey, jetbrainsMessages, 10*time.Minute)
+		RecordCacheMiss()
 	}
 
 	// CRITICAL FIX: Force tool usage when tools are provided
@@ -122,15 +132,22 @@ func chatCompletions(c *gin.Context) {
 		var validatedTools []Tool
 		if found {
 			validatedTools = validatedToolsAny.([]Tool)
+			RecordCacheHit()
 		} else {
+			validationStart := time.Now()
 			var validationErr error
 			validatedTools, validationErr = validateAndTransformTools(request.Tools)
+			validationDuration := time.Since(validationStart)
+			RecordToolValidation(validationDuration)
+			
 			if validationErr != nil {
 				recordFailureWithTimer(startTime, request.Model, accountIdentifier)
+				RecordHTTPError()
 				respondWithError(c, http.StatusBadRequest, fmt.Sprintf("Tool validation failed: %v", validationErr))
 				return
 			}
 			toolsValidationCache.Set(toolsCacheKey, validatedTools, 30*time.Minute)
+			RecordCacheMiss()
 		}
 
 		if len(validatedTools) > 0 {

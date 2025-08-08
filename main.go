@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -50,14 +51,23 @@ func main() {
 
 	// Initialize optimized HTTP client with connection pooling
 	transport := &http.Transport{
-		MaxIdleConns:          200,               // 增加连接池大小
-		MaxIdleConnsPerHost:   50,                // 增加每个主机的连接数
-		MaxConnsPerHost:       100,               // 限制每个主机的最大连接数
-		IdleConnTimeout:       300 * time.Second, // 延长空闲连接超时到5分钟
+		MaxIdleConns:          500,               // 增加连接池大小到500
+		MaxIdleConnsPerHost:   100,               // 增加每个主机的连接数到100
+		MaxConnsPerHost:       200,               // 限制每个主机的最大连接数到200
+		IdleConnTimeout:       600 * time.Second, // 延长空闲连接超时到10分钟
 		TLSHandshakeTimeout:   30 * time.Second,  // 增加TLS握手超时
 		ExpectContinueTimeout: 5 * time.Second,   // 增加Expect Continue超时
 		DisableKeepAlives:     false,             // 启用 Keep-Alive
 		ForceAttemptHTTP2:     true,              // 强制使用 HTTP/2
+		// 连接池优化配置
+		ResponseHeaderTimeout: 30 * time.Second,
+		// 启用连接复用优化
+		DisableCompression:    false,
+		// 优化TCP配置
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 600 * time.Second,
+		}).DialContext,
 	}
 	httpClient = &http.Client{
 		Transport: transport,
