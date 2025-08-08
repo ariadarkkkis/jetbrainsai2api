@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/bytedance/sonic"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -11,30 +10,30 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bytedance/sonic"
+
 	"github.com/joho/godotenv"
 )
 
 const (
-	DefaultRequestTimeout = 30 * time.Second
+	DefaultRequestTimeout = 5 * time.Minute // 增加到5分钟，适应长响应
 	QuotaCacheTime        = time.Hour
 	JWTRefreshTime        = 12 * time.Hour
 )
 
 // Global variables
 var (
-	validClientKeys        = make(map[string]bool)
-	jetbrainsAccounts      []JetbrainsAccount
-	accountPool            chan *JetbrainsAccount // 新增账户池通道
-	modelsData             ModelsData
-	modelsConfig           ModelsConfig
-	httpClient             *http.Client
-	requestStats           RequestStats
-	statsMutex             sync.Mutex
-	// 性能优化相关缓存
-	toolsCache             = make(map[string][]Tool)
-	toolsCacheMutex        sync.RWMutex
-	accountQuotaCache      = make(map[string]*CachedQuotaInfo)
-	quotaCacheMutex        sync.RWMutex
+	validClientKeys   = make(map[string]bool)
+	jetbrainsAccounts []JetbrainsAccount
+	accountPool       chan *JetbrainsAccount // 新增账户池通道
+	modelsData        ModelsData
+	modelsConfig      ModelsConfig
+	httpClient        *http.Client
+	requestStats      RequestStats
+	statsMutex        sync.Mutex
+
+	accountQuotaCache = make(map[string]*CachedQuotaInfo)
+	quotaCacheMutex   sync.RWMutex
 )
 
 func main() {
@@ -51,18 +50,18 @@ func main() {
 
 	// Initialize optimized HTTP client with connection pooling
 	transport := &http.Transport{
-		MaxIdleConns:        200,  // 增加连接池大小
-		MaxIdleConnsPerHost: 50,   // 增加每个主机的连接数
-		MaxConnsPerHost:     100,  // 限制每个主机的最大连接数
-		IdleConnTimeout:     120 * time.Second, // 延长空闲连接超时
-		TLSHandshakeTimeout: 10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		DisableKeepAlives:   false, // 启用 Keep-Alive
-		ForceAttemptHTTP2:   true,  // 强制使用 HTTP/2
+		MaxIdleConns:          200,               // 增加连接池大小
+		MaxIdleConnsPerHost:   50,                // 增加每个主机的连接数
+		MaxConnsPerHost:       100,               // 限制每个主机的最大连接数
+		IdleConnTimeout:       300 * time.Second, // 延长空闲连接超时到5分钟
+		TLSHandshakeTimeout:   30 * time.Second,  // 增加TLS握手超时
+		ExpectContinueTimeout: 5 * time.Second,   // 增加Expect Continue超时
+		DisableKeepAlives:     false,             // 启用 Keep-Alive
+		ForceAttemptHTTP2:     true,              // 强制使用 HTTP/2
 	}
 	httpClient = &http.Client{
 		Transport: transport,
-		Timeout:   DefaultRequestTimeout,
+		Timeout:   DefaultRequestTimeout, // 使用5分钟超时
 	}
 
 	// Load configuration

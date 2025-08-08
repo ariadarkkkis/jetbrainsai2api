@@ -166,7 +166,7 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		
 		return nil, fmt.Errorf("account %s is over quota", getTokenDisplayName(account))
 
-	case <-time.After(10 * time.Second):
+	case <-time.After(60 * time.Second):  // 增加到60秒，给账户更多时间释放
 		return nil, fmt.Errorf("timed out waiting for an available JetBrains account")
 	}
 }
