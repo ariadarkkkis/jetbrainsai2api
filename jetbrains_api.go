@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"io"
 	"log"
 	"net/http"
@@ -36,7 +36,7 @@ func handleJWTExpiredAndRetry(req *http.Request, account *JetbrainsAccount) (*ht
 	if resp.StatusCode == 401 && account.LicenseID != "" {
 		resp.Body.Close()
 		log.Printf("JWT for %s expired, refreshing...", getTokenDisplayName(account))
-		
+
 		jwtRefreshMutex.Lock()
 		// Check if another goroutine already refreshed the JWT
 		if req.Header.Get("grazie-authenticate-jwt") == account.JWT {
@@ -59,7 +59,7 @@ func ensureValidJWT(account *JetbrainsAccount) error {
 	if account.JWT == "" && account.LicenseID != "" {
 		jwtRefreshMutex.Lock()
 		defer jwtRefreshMutex.Unlock()
-		
+
 		// Double-check after acquiring lock
 		if account.JWT == "" {
 			return refreshJetbrainsJWT(account)
@@ -145,12 +145,12 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		if waitDuration > 100*time.Millisecond { // 只记录超过100ms的等待
 			RecordAccountPoolWait(waitDuration)
 		}
-		
+
 		// Defer re-queueing the account
 		defer func() {
 			accountPool <- account
 		}()
-		
+
 		// 检查JWT是否需要刷新
 		if account.LicenseID != "" {
 			if account.JWT == "" || time.Now().After(account.ExpiryTime.Add(-JWTRefreshTime)) {
@@ -172,10 +172,10 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		if account.HasQuota {
 			return account, nil
 		}
-		
+
 		return nil, fmt.Errorf("account %s is over quota", getTokenDisplayName(account))
 
-	case <-time.After(60 * time.Second):  // 增加到60秒，给账户更多时间释放
+	case <-time.After(60 * time.Second): // 增加到60秒，给账户更多时间释放
 		RecordAccountPoolError()
 		return nil, fmt.Errorf("timed out waiting for an available JetBrains account")
 	}
@@ -263,5 +263,3 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 
 	return &quotaData, nil
 }
-
-

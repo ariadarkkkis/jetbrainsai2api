@@ -13,16 +13,16 @@ func setupRoutes() *gin.Engine {
 	ginMode := getGinMode()
 	gin.SetMode(ginMode)
 	r := gin.New()
-	
+
 	// 添加中间件
 	setupMiddleware(r)
-	
+
 	// 设置静态页面路由（不需要认证）
 	setupPublicRoutes(r)
-	
+
 	// 设置API路由（需要认证）
 	setupAPIRoutes(r)
-	
+
 	return r
 }
 
@@ -35,7 +35,7 @@ func getGinMode() string {
 func setupMiddleware(r *gin.Engine) {
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
-	
+
 	// 添加CORS中间件
 	r.Use(corsMiddleware())
 }
@@ -78,10 +78,10 @@ func setupAPIRoutes(r *gin.Engine) {
 // healthCheck 健康检查端点
 func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{
-		"status": "healthy",
-		"service": "jetbrainsai2api",
-		"timestamp": time.Now().Format("2006-01-02 15:04:05"),
-		"accounts": len(jetbrainsAccounts),
+		"status":     "healthy",
+		"service":    "jetbrainsai2api",
+		"timestamp":  time.Now().Format("2006-01-02 15:04:05"),
+		"accounts":   len(jetbrainsAccounts),
 		"valid_keys": len(validClientKeys),
 	})
 }

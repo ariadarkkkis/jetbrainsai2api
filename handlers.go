@@ -60,13 +60,13 @@ func listModels(c *gin.Context) {
 // chatCompletions handles chat completion requests
 func chatCompletions(c *gin.Context) {
 	startTime := time.Now()
-	
+
 	// 记录性能指标开始
 	defer func() {
 		duration := time.Since(startTime)
 		RecordHTTPRequest(duration)
 	}()
-	
+
 	var request ChatCompletionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		recordFailureWithTimer(startTime, "", "")
@@ -139,7 +139,7 @@ func chatCompletions(c *gin.Context) {
 			validatedTools, validationErr = validateAndTransformTools(request.Tools)
 			validationDuration := time.Since(validationStart)
 			RecordToolValidation(validationDuration)
-			
+
 			if validationErr != nil {
 				recordFailureWithTimer(startTime, request.Model, accountIdentifier)
 				RecordHTTPError()

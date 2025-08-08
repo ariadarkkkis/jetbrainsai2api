@@ -62,7 +62,7 @@ func main() {
 		// 连接池优化配置
 		ResponseHeaderTimeout: 30 * time.Second,
 		// 启用连接复用优化
-		DisableCompression:    false,
+		DisableCompression: false,
 		// 优化TCP配置
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,

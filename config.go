@@ -23,7 +23,7 @@ func loadModels() ModelsData {
 		var modelIDs []string
 		if err := sonic.Unmarshal(data, &modelIDs); err != nil {
 			log.Printf("Error parsing models.json: %v", err)
-				return result
+			return result
 		}
 		// Convert to new format
 		config.Models = make(map[string]string)
@@ -118,4 +118,3 @@ func getModelItem(modelID string) *ModelInfo {
 	}
 	return nil
 }
-

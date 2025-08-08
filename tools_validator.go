@@ -19,7 +19,7 @@ const (
 var (
 	paramNameRegex = regexp.MustCompile(ParamNamePattern)
 	// 缓存已验证的工具定义，避免重复验证
-	validatedToolsCache = make(map[string][]Tool)
+	validatedToolsCache  = make(map[string][]Tool)
 	validationCacheMutex sync.RWMutex
 	// 预编译的参数转换缓存
 	paramTransformCache = NewCache()
@@ -33,7 +33,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 
 	// 生成缓存键
 	cacheKey := generateToolsCacheKey(tools)
-	
+
 	// 检查缓存
 	validationCacheMutex.RLock()
 	if cached, exists := validatedToolsCache[cacheKey]; exists {
@@ -52,7 +52,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 
 	for i, tool := range tools {
 		log.Printf("Processing tool %d: %s", i, tool.Function.Name)
-		
+
 		// 验证工具名称
 		if !isValidParamName(tool.Function.Name) {
 			log.Printf("Invalid tool name: %s, skipping tool", tool.Function.Name)
@@ -85,7 +85,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	log.Printf("Final validated tools count: %d", len(validatedTools))
 	log.Printf("Final validated tools: %s", toJSONString(validatedTools))
 	log.Printf("=== TOOL VALIDATION DEBUG END ===")
-	
+
 	// 缓存验证结果
 	validationCacheMutex.Lock()
 	validatedToolsCache[cacheKey] = validatedTools
@@ -98,7 +98,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 		}
 	}
 	validationCacheMutex.Unlock()
-	
+
 	return validatedTools, nil
 }
 
@@ -168,11 +168,11 @@ func enhancePromptForToolUse(messages []ChatMessage, tools []Tool) []ChatMessage
 	// Special handling for complex tools with nested objects
 	var toolInstructions []string
 	var hasComplexTools bool
-	
+
 	for _, tool := range tools {
 		toolDesc := fmt.Sprintf("'%s'(%s)", tool.Function.Name, tool.Function.Description)
 		toolInstructions = append(toolInstructions, toolDesc)
-		
+
 		// Check if this tool has complex nested parameters
 		params := tool.Function.Parameters
 		if props, ok := params["properties"].(map[string]any); ok {
@@ -240,26 +240,6 @@ EXAMPLE PATTERNS:
 	return enhancedMessages
 }
 
-// validateAndTransformTool validates and transforms a single tool function
-func validateAndTransformTool(tool ToolFunction) (ToolFunction, error) {
-	// Validate function name
-	if !isValidParamName(tool.Name) {
-		return ToolFunction{}, fmt.Errorf("function name '%s' doesn't match required pattern", tool.Name)
-	}
-
-	// Transform parameters
-	transformedParams, err := transformParameters(tool.Parameters)
-	if err != nil {
-		return ToolFunction{}, fmt.Errorf("parameter transformation failed: %v", err)
-	}
-
-	return ToolFunction{
-		Name:        tool.Name,
-		Description: tool.Description,
-		Parameters:  transformedParams,
-	}, nil
-}
-
 // transformParameters transforms complex parameter schemas to JetBrains-compatible format
 func transformParameters(params map[string]any) (map[string]any, error) {
 	if params == nil {
@@ -269,7 +249,7 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 			"additionalProperties": false,
 		}, nil
 	}
-	
+
 	// Check cache first
 	cacheKey := generateParamsCacheKey(params)
 	if cached, found := paramTransformCache.Get(cacheKey); found {
@@ -288,19 +268,19 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 	if properties, ok := params["properties"].(map[string]any); ok {
 		propCount := len(properties)
 		log.Printf("Processing %d properties for parameter transformation", propCount)
-		
+
 		// If there are too many properties, we need to be more aggressive about simplification
-		if propCount > 15 {  // Raised threshold from 10 to 15 for edge cases
+		if propCount > 15 { // Raised threshold from 10 to 15 for edge cases
 			log.Printf("Tool has %d properties (>15), applying EXTREME simplification for tool usage guarantee", propCount)
 			// EXTREME SIMPLIFICATION: For very complex tools, convert to single string parameter
 			// BUT also provide some original parameters to satisfy validation
 			resultProps := map[string]any{
 				"data": map[string]any{
-					"type": "string",
+					"type":        "string",
 					"description": fmt.Sprintf("Provide all %d required fields as a single JSON string. Example: {\"field1\":\"value1\",\"field2\":\"value2\"}", propCount),
 				},
 			}
-			
+
 			// Add a few original parameters to satisfy test validators that expect multiple params
 			var addedParams []string
 			if props, ok := params["properties"].(map[string]any); ok {
@@ -321,9 +301,9 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 					}
 				}
 			}
-			
+
 			result["properties"] = resultProps
-			
+
 			// Update required to only include fields that actually exist
 			requiredFields := []string{"data"}
 			requiredFields = append(requiredFields, addedParams...)
@@ -370,7 +350,7 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 
 	// Cache the result
 	paramTransformCache.Set(cacheKey, result, 30*time.Minute)
-	
+
 	return result, nil
 }
 
@@ -414,10 +394,10 @@ func transformPropertySchema(schema any) (map[string]any, error) {
 	// Handle anyOf, oneOf, allOf by converting to most simple usable format
 	if anyOfSchema, ok := schemaMap["anyOf"]; ok {
 		log.Printf("SIMPLIFYING anyOf schema for guaranteed tool usage: %s", toJSONString(anyOfSchema))
-		
+
 		// AGGRESSIVE SIMPLIFICATION: Convert to string with clear instructions
 		result["type"] = "string"
-		
+
 		// Try to provide helpful guidance based on the anyOf options
 		var typeHints []string
 		if anyOfSlice, ok := anyOfSchema.([]any); ok {
@@ -433,13 +413,13 @@ func transformPropertySchema(schema any) (map[string]any, error) {
 				}
 			}
 		}
-		
+
 		if len(typeHints) > 0 {
 			result["description"] = fmt.Sprintf("Multi-type field: %s", strings.Join(typeHints, " or "))
 		} else {
 			result["description"] = "Multi-type field - provide as string (use 'null' for null values)"
 		}
-		
+
 		log.Printf("CONVERTED anyOf to simple string type with description: %s", result["description"])
 		return result, nil
 	}
@@ -513,7 +493,7 @@ func transformPropertySchema(schema any) (map[string]any, error) {
 												}
 											}
 										}
-										
+
 										if hasDeepNesting {
 											// Only flatten if it's deeply nested (3+ levels)
 											simpleProps[validName] = map[string]any{

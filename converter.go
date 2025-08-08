@@ -75,5 +75,3 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 	}
 	return jetbrainsMessages
 }
-
-

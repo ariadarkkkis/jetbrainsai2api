@@ -56,7 +56,6 @@ func parseEnvList(envVar string) []string {
 	return result
 }
 
-
 // respondWithError sends a JSON error response
 func respondWithError(c *gin.Context, code int, message string) {
 	c.JSON(code, gin.H{"error": message})

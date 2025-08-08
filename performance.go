@@ -13,39 +13,39 @@ import (
 // PerformanceMetrics 性能指标收集器
 type PerformanceMetrics struct {
 	mu sync.RWMutex
-	
+
 	// HTTP相关指标
-	httpRequests      int64
-	httpErrors        int64
-	avgResponseTime   float64
-	
+	httpRequests    int64
+	httpErrors      int64
+	avgResponseTime float64
+
 	// 缓存相关指标
-	cacheHits         int64
-	cacheMisses       int64
-	cacheHitRate      float64
-	
+	cacheHits    int64
+	cacheMisses  int64
+	cacheHitRate float64
+
 	// 工具验证相关指标
-	toolValidations   int64
+	toolValidations    int64
 	toolValidationTime float64
-	
+
 	// 账户管理相关指标
 	accountPoolWait   int64
 	accountPoolErrors int64
-	
+
 	// 系统资源指标
-	memoryUsage       uint64
-	goroutineCount    int
-	
+	memoryUsage    uint64
+	goroutineCount int
+
 	// 时间窗口统计
-	windowStartTime   time.Time
-	windowRequests    int64
+	windowStartTime time.Time
+	windowRequests  int64
 }
 
 var (
 	metrics = &PerformanceMetrics{
 		windowStartTime: time.Now(),
 	}
-	
+
 	// expvar 统计变量
 	httpRequestsVar    = expvar.NewInt("http_requests_total")
 	httpErrorsVar      = expvar.NewInt("http_errors_total")
@@ -59,17 +59,17 @@ var (
 func RecordHTTPRequest(duration time.Duration) {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.httpRequests++
 	metrics.windowRequests++
-	
+
 	// 计算平均响应时间
 	if metrics.avgResponseTime == 0 {
 		metrics.avgResponseTime = float64(duration.Milliseconds())
 	} else {
 		metrics.avgResponseTime = (metrics.avgResponseTime*0.9 + float64(duration.Milliseconds())*0.1)
 	}
-	
+
 	// 更新expvar
 	httpRequestsVar.Add(1)
 	avgResponseTimeVar.Set(metrics.avgResponseTime)
@@ -79,7 +79,7 @@ func RecordHTTPRequest(duration time.Duration) {
 func RecordHTTPError() {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.httpErrors++
 	httpErrorsVar.Add(1)
 }
@@ -88,15 +88,15 @@ func RecordHTTPError() {
 func RecordCacheHit() {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.cacheHits++
-	
+
 	// 计算缓存命中率
 	total := metrics.cacheHits + metrics.cacheMisses
 	if total > 0 {
 		metrics.cacheHitRate = float64(metrics.cacheHits) / float64(total)
 	}
-	
+
 	cacheHitsVar.Add(1)
 }
 
@@ -104,15 +104,15 @@ func RecordCacheHit() {
 func RecordCacheMiss() {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.cacheMisses++
-	
+
 	// 计算缓存命中率
 	total := metrics.cacheHits + metrics.cacheMisses
 	if total > 0 {
 		metrics.cacheHitRate = float64(metrics.cacheHits) / float64(total)
 	}
-	
+
 	cacheMissesVar.Add(1)
 }
 
@@ -120,15 +120,15 @@ func RecordCacheMiss() {
 func RecordToolValidation(duration time.Duration) {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.toolValidations++
-	
+
 	if metrics.toolValidationTime == 0 {
 		metrics.toolValidationTime = float64(duration.Milliseconds())
 	} else {
 		metrics.toolValidationTime = (metrics.toolValidationTime*0.9 + float64(duration.Milliseconds())*0.1)
 	}
-	
+
 	toolValidationsVar.Add(1)
 }
 
@@ -136,7 +136,7 @@ func RecordToolValidation(duration time.Duration) {
 func RecordAccountPoolWait(duration time.Duration) {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.accountPoolWait++
 }
 
@@ -144,7 +144,7 @@ func RecordAccountPoolWait(duration time.Duration) {
 func RecordAccountPoolError() {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.accountPoolErrors++
 }
 
@@ -152,10 +152,10 @@ func RecordAccountPoolError() {
 func UpdateSystemMetrics() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.memoryUsage = m.Alloc
 	metrics.goroutineCount = runtime.NumGoroutine()
 }
@@ -164,7 +164,7 @@ func UpdateSystemMetrics() {
 func ResetWindow() {
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
-	
+
 	metrics.windowStartTime = time.Now()
 	metrics.windowRequests = 0
 }
@@ -173,7 +173,7 @@ func ResetWindow() {
 func GetMetricsString() string {
 	metrics.mu.RLock()
 	defer metrics.mu.RUnlock()
-	
+
 	return fmt.Sprintf(`=== 性能指标统计 ===
 HTTP请求:
 - 总请求数: %d
@@ -206,20 +206,20 @@ HTTP请求:
 		metrics.httpErrors,
 		float64(metrics.httpErrors)/float64(metrics.httpRequests)*100,
 		metrics.avgResponseTime,
-		
+
 		metrics.cacheHits,
 		metrics.cacheMisses,
 		metrics.cacheHitRate*100,
-		
+
 		metrics.toolValidations,
 		metrics.toolValidationTime,
-		
+
 		metrics.accountPoolWait,
 		metrics.accountPoolErrors,
-		
+
 		metrics.memoryUsage/1024/1024,
 		metrics.goroutineCount,
-		
+
 		metrics.windowStartTime.Format("2006-01-02 15:04:05"),
 		metrics.windowRequests,
 	)
@@ -229,12 +229,12 @@ HTTP请求:
 func GetQPS() float64 {
 	metrics.mu.RLock()
 	defer metrics.mu.RUnlock()
-	
+
 	windowDuration := time.Since(metrics.windowStartTime).Seconds()
 	if windowDuration == 0 {
 		return 0
 	}
-	
+
 	return float64(metrics.windowRequests) / windowDuration
 }
 
@@ -243,17 +243,17 @@ func StartMetricsMonitor() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ticker.C:
 				UpdateSystemMetrics()
-				
+
 				// 每5分钟重置窗口统计
 				if time.Since(metrics.windowStartTime) > 5*time.Minute {
 					ResetWindow()
 				}
-				
+
 				// 在debug模式下输出性能指标
 				if gin.Mode() == gin.DebugMode {
 					fmt.Printf("=== 性能监控报告 ===\n")

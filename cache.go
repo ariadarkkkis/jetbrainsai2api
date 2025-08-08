@@ -34,13 +34,13 @@ func NewCache() *LRUCache {
 		capacity: 1000, // 优化缓存容量
 		items:    make(map[string]*CacheItem),
 	}
-	
+
 	// Initialize sentinel nodes
 	cache.head = &CacheItem{}
 	cache.tail = &CacheItem{}
 	cache.head.next = cache.tail
 	cache.tail.prev = cache.head
-	
+
 	// Add a background goroutine to clean up expired items.
 	go func() {
 		for {
@@ -55,7 +55,7 @@ func NewCache() *LRUCache {
 func (c *LRUCache) Set(key string, value any, duration time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	// If item exists, update it and move to front
 	if item, exists := c.items[key]; exists {
 		item.Value = value
@@ -63,18 +63,18 @@ func (c *LRUCache) Set(key string, value any, duration time.Duration) {
 		c.moveToFront(item)
 		return
 	}
-	
+
 	// Create new item
 	item := &CacheItem{
 		Value:      value,
 		Expiration: time.Now().Add(duration).UnixNano(),
 		key:        key,
 	}
-	
+
 	// Add to front
 	c.addToFront(item)
 	c.items[key] = item
-	
+
 	// Evict if over capacity
 	if len(c.items) > c.capacity {
 		c.evict()
@@ -85,16 +85,16 @@ func (c *LRUCache) Set(key string, value any, duration time.Duration) {
 func (c *LRUCache) Get(key string) (any, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	item, found := c.items[key]
 	if !found {
 		return nil, false
 	}
-	
+
 	if time.Now().UnixNano() > item.Expiration {
 		return nil, false
 	}
-	
+
 	// Move to front for LRU
 	c.moveToFront(item)
 	return item.Value, true
@@ -165,7 +165,7 @@ func (c *LRUCache) evict() {
 	if c.tail.prev == c.head {
 		return
 	}
-	
+
 	item := c.tail.prev
 	c.remove(item)
 	delete(c.items, item.key)
@@ -174,7 +174,7 @@ func (c *LRUCache) evict() {
 func (c *LRUCache) cleanupExpired() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	now := time.Now().UnixNano()
 	for key, item := range c.items {
 		if now > item.Expiration {

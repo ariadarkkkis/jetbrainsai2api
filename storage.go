@@ -127,7 +127,7 @@ var storage StorageInterface
 // initStorage initializes the storage based on environment configuration
 func initStorage() error {
 	redisURL := os.Getenv("REDIS_URL")
-	
+
 	if redisURL != "" {
 		// Use Redis storage
 		redisStorage, err := NewRedisStorage(redisURL)
@@ -143,7 +143,7 @@ func initStorage() error {
 		storage = &FileStorage{}
 		log.Printf("Using file storage")
 	}
-	
+
 	return nil
 }
 

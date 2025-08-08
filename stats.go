@@ -147,7 +147,7 @@ func getLicenseDisplayName(account *JetbrainsAccount) string {
 func initRequestTriggeredSaving() {
 	saveWorkerOnce.Do(func() {
 		saveChan = make(chan bool, 100) // 缓冲通道，避免阻塞
-		go saveWorker() // 启动异步保存工作协程
+		go saveWorker()                 // 启动异步保存工作协程
 	})
 }
 
@@ -157,7 +157,7 @@ func saveWorker() {
 		// 检查是否需要保存（防抖机制）
 		now := time.Now().Unix()
 		lastSave := atomic.LoadInt64(&lastSaveTime)
-		
+
 		if now-lastSave >= int64(minSaveInterval.Seconds()) {
 			// 执行实际的保存操作
 			saveStats()
