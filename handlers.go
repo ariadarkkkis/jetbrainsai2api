@@ -199,7 +199,7 @@ func chatCompletions(c *gin.Context) {
 		log.Printf("=== End Debug ===")
 	}
 
-	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v7", bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v8", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
 		respondWithError(c, http.StatusInternalServerError, "Failed to create request")

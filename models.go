@@ -158,9 +158,12 @@ type StreamResponse struct {
 	Choices []StreamChoice `json:"choices"`
 }
 
+// JetbrainsMessage updated to support media messages (v8 API)
 type JetbrainsMessage struct {
 	Type         string                 `json:"type"`
-	Content      string                 `json:"content"`
+	Content      string                 `json:"content,omitempty"`
+	MediaType    string                 `json:"mediaType,omitempty"`    // New field for v8 image support
+	Data         string                 `json:"data,omitempty"`         // New field for v8 image data
 	FunctionCall *JetbrainsFunctionCall `json:"functionCall,omitempty"`
 	FunctionName string                 `json:"functionName,omitempty"`
 }

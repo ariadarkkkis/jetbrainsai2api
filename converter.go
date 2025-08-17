@@ -1,13 +1,16 @@
 package main
 
 import (
-	"github.com/bytedance/sonic"
 	"log"
+
+	"github.com/bytedance/sonic"
 )
 
 // openAIToJetbrainsMessages converts OpenAI chat messages to JetBrains format
 func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 	toolIDToFuncNameMap := make(map[string]string)
+	validator := NewImageValidator()
+
 	for _, msg := range messages {
 		if msg.Role == "assistant" && msg.ToolCalls != nil {
 			for _, tc := range msg.ToolCalls {
@@ -23,9 +26,43 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 		textContent := extractTextContent(msg.Content)
 
 		switch msg.Role {
-		case "user", "system":
+		case "user":
+			// Check for image content in user messages
+			mediaType, imageData, hasImage := ExtractImageDataFromContent(msg.Content)
+			if hasImage {
+				// Validate the image
+				if err := validator.ValidateImageData(mediaType, imageData); err != nil {
+					log.Printf("Image validation failed: %v", err)
+					// Continue with text content only if image validation fails
+					jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+						Type:    "user_message",
+						Content: textContent,
+					})
+				} else {
+					// Add image message for v8 API
+					jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+						Type:      "media_message",
+						MediaType: mediaType,
+						Data:      imageData,
+					})
+
+					// Add text message if there's also text content
+					if textContent != "" {
+						jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+							Type:    "user_message",
+							Content: textContent,
+						})
+					}
+				}
+			} else {
+				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+					Type:    "user_message",
+					Content: textContent,
+				})
+			}
+		case "system":
 			jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
-				Type:    msg.Role + "_message",
+				Type:    "system_message",
 				Content: textContent,
 			})
 		case "assistant":
