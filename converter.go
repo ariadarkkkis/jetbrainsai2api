@@ -73,7 +73,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 				var argsMap map[string]any
 				if err := sonic.UnmarshalString(toolCall.Function.Arguments, &argsMap); err == nil {
 					// 如果成功解码，重新编码以确保它是一个干净的 JSON
-					cleanArgs, _ := sonic.Marshal(argsMap)
+					cleanArgs, _ := marshalJSON(argsMap)
 					toolCall.Function.Arguments = string(cleanArgs)
 				}
 				// 如果解码失败，我们假定它已经是我们想要的格式

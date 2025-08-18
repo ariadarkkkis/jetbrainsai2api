@@ -133,7 +133,7 @@ func generateToolsCacheKey(tools []Tool) string {
 // generateParamsCacheKey creates a cache key from parameter schemas
 func generateParamsCacheKey(params map[string]any) string {
 	// 使用 Sonic 快速序列化
-	data, _ := sonic.Marshal(params)
+	data, _ := marshalJSON(params)
 	hash := sha1.Sum(data)
 	return hex.EncodeToString(hash[:])
 }

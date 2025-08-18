@@ -1,13 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bytedance/sonic"
 )
 
 const (
@@ -104,7 +105,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 
 // toJSONString 将对象转换为JSON字符串，用于日志记录
 func toJSONString(v interface{}) string {
-	data, err := json.Marshal(v)
+	data, err := marshalJSON(v)
 	if err != nil {
 		return fmt.Sprintf("<error: %v>", err)
 	}
@@ -634,7 +635,7 @@ func validateToolCallResponse(toolCall ToolCall) error {
 	// Validate arguments JSON
 	if toolCall.Function.Arguments != "" {
 		var args map[string]any
-		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+		if err := sonic.UnmarshalString(toolCall.Function.Arguments, &args); err != nil {
 			return fmt.Errorf("tool call arguments are not valid JSON: %v", err)
 		}
 	}
