@@ -72,3 +72,4 @@ Thumbs.db
 .env.test
 stats.json
 report.json
+.serena

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -43,31 +44,43 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	}
 	validationCacheMutex.RUnlock()
 
-	log.Printf("=== TOOL VALIDATION DEBUG START ===")
-	log.Printf("Original tools count: %d", len(tools))
-	for i, tool := range tools {
-		log.Printf("Original tool %d: %s", i, toJSONString(tool))
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("=== TOOL VALIDATION DEBUG START ===")
+		log.Printf("Original tools count: %d", len(tools))
+		for i, tool := range tools {
+			log.Printf("Original tool %d: %s", i, toJSONString(tool))
+		}
 	}
 
 	validatedTools := make([]Tool, 0, len(tools))
 
 	for i, tool := range tools {
-		log.Printf("Processing tool %d: %s", i, tool.Function.Name)
+		if gin.Mode() == gin.DebugMode {
+			log.Printf("Processing tool %d: %s", i, tool.Function.Name)
+		}
 
 		// 验证工具名称
 		if !isValidParamName(tool.Function.Name) {
-			log.Printf("Invalid tool name: %s, skipping tool", tool.Function.Name)
+			if gin.Mode() == gin.DebugMode {
+				log.Printf("Invalid tool name: %s, skipping tool", tool.Function.Name)
+			}
 			continue
 		}
 
 		// 验证和转换参数
-		log.Printf("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
+		if gin.Mode() == gin.DebugMode {
+			log.Printf("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
+		}
 		transformedParams, err := transformParameters(tool.Function.Parameters)
 		if err != nil {
-			log.Printf("Failed to transform tool %s parameters: %v", tool.Function.Name, err)
+			if gin.Mode() == gin.DebugMode {
+				log.Printf("Failed to transform tool %s parameters: %v", tool.Function.Name, err)
+			}
 			continue
 		}
-		log.Printf("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
+		if gin.Mode() == gin.DebugMode {
+			log.Printf("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
+		}
 
 		// 创建新的工具对象
 		validatedTool := Tool{
@@ -80,12 +93,16 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 		}
 
 		validatedTools = append(validatedTools, validatedTool)
-		log.Printf("Successfully validated tool: %s", tool.Function.Name)
+		if gin.Mode() == gin.DebugMode {
+			log.Printf("Successfully validated tool: %s", tool.Function.Name)
+		}
 	}
 
-	log.Printf("Final validated tools count: %d", len(validatedTools))
-	log.Printf("Final validated tools: %s", toJSONString(validatedTools))
-	log.Printf("=== TOOL VALIDATION DEBUG END ===")
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("Final validated tools count: %d", len(validatedTools))
+		log.Printf("Final validated tools: %s", toJSONString(validatedTools))
+		log.Printf("=== TOOL VALIDATION DEBUG END ===")
+	}
 
 	// 缓存验证结果
 	validationCacheMutex.Lock()
@@ -140,9 +157,11 @@ func enhancePromptForToolUse(messages []ChatMessage, tools []Tool) []ChatMessage
 		return messages
 	}
 
-	log.Printf("=== PROMPT ENHANCEMENT DEBUG START ===")
-	log.Printf("Original messages count: %d", len(messages))
-	log.Printf("Tools for enhancement: %d", len(tools))
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("=== PROMPT ENHANCEMENT DEBUG START ===")
+		log.Printf("Original messages count: %d", len(messages))
+		log.Printf("Tools for enhancement: %d", len(tools))
+	}
 
 	// Get the last user message
 	lastUserIndex := -1
@@ -154,12 +173,16 @@ func enhancePromptForToolUse(messages []ChatMessage, tools []Tool) []ChatMessage
 	}
 
 	if lastUserIndex == -1 {
-		log.Printf("No user message found, skipping prompt enhancement")
+		if gin.Mode() == gin.DebugMode {
+			log.Printf("No user message found, skipping prompt enhancement")
+		}
 		return messages
 	}
 
 	originalContent := extractTextContent(messages[lastUserIndex].Content)
-	log.Printf("Original user message: %s", originalContent)
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("Original user message: %s", originalContent)
+	}
 
 	// Create enhanced messages
 	enhancedMessages := make([]ChatMessage, len(messages))
@@ -191,8 +214,10 @@ func enhancePromptForToolUse(messages []ChatMessage, tools []Tool) []ChatMessage
 		}
 	}
 
-	log.Printf("Detected complex tools: %t", hasComplexTools)
-	log.Printf("Tool instructions: %v", toolInstructions)
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("Detected complex tools: %t", hasComplexTools)
+		log.Printf("Tool instructions: %v", toolInstructions)
+	}
 
 	var complexToolGuidance string
 	if hasComplexTools {
@@ -234,9 +259,13 @@ EXAMPLE PATTERNS:
 		complexToolGuidance,
 	)
 
-	log.Printf("Enhanced user message: %s", enhancedContent)
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("Enhanced user message: %s", enhancedContent)
+	}
 	enhancedMessages[lastUserIndex].Content = enhancedContent
-	log.Printf("=== PROMPT ENHANCEMENT DEBUG END ===")
+	if gin.Mode() == gin.DebugMode {
+		log.Printf("=== PROMPT ENHANCEMENT DEBUG END ===")
+	}
 
 	return enhancedMessages
 }
