@@ -402,18 +402,6 @@ go build -o jetbrainsai2api *.go
 go mod tidy
 ```
 
-### 测试
-```bash
-# 运行所有测试
-go test ./...
-
-# 运行特定包测试
-go test -v ./internal/...
-
-# 基准测试
-go test -bench=. ./...
-```
-
 ## 🚀 部署指南
 
 ### Docker 部署
@@ -553,17 +541,15 @@ SOFTWARE.
 欢迎贡献代码和反馈！在提交Pull Request之前，请确保：
 
 1. **代码质量**: 遵循Go语言编码规范
-2. **测试覆盖**: 为新功能添加相应测试
-3. **文档更新**: 更新相关文档和README
-4. **性能考虑**: 确保不会显著影响现有性能
+2. **文档更新**: 更新相关文档和README
+3. **性能考虑**: 确保不会显著影响现有性能
 
 ### 提交流程
 ```bash
 # 1. Fork项目并创建功能分支
 git checkout -b feature/new-feature
 
-# 2. 开发和测试
-go test ./...
+# 2. 开发和代码检查
 go fmt ./...
 
 # 3. 提交更改
