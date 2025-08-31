@@ -67,6 +67,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 			})
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
+				// V8 API: Use assistant_message_tool for tool calls
 				toolCall := msg.ToolCalls[0]
 
 				// 尝试解析参数，如果是一个 JSON 字符串，就解码它以获取原始的参数对象
@@ -76,29 +77,29 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 					cleanArgs, _ := marshalJSON(argsMap)
 					toolCall.Function.Arguments = string(cleanArgs)
 				}
-				// 如果解码失败，我们假定它已经是我们想要的格式
 
 				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
-					Type:    "assistant_message",
-					Content: textContent,
-					FunctionCall: &JetbrainsFunctionCall{
-						FunctionName: toolCall.Function.Name,
-						Content:      toolCall.Function.Arguments,
-					},
+					Type:     "assistant_message_tool",
+					ID:       toolCall.ID,
+					ToolName: toolCall.Function.Name,
+					Content:  toolCall.Function.Arguments,
 				})
 			} else {
+				// V8 API: Use assistant_message_text for text responses
 				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
-					Type:    "assistant_message",
+					Type:    "assistant_message_text",
 					Content: textContent,
 				})
 			}
 		case "tool":
 			functionName := toolIDToFuncNameMap[msg.ToolCallID]
 			if functionName != "" {
+				// V8 API: Use tool_message for tool results
 				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
-					Type:         "function_message",
-					Content:      textContent,
-					FunctionName: functionName,
+					Type:     "tool_message",
+					ID:       msg.ToolCallID,
+					ToolName: functionName,
+					Result:   textContent,
 				})
 			} else {
 				log.Printf("Warning: Cannot find function name for tool_call_id %s", msg.ToolCallID)

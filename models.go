@@ -129,6 +129,17 @@ type ToolFunction struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
+// JetBrains专用的工具格式
+type JetbrainsToolDefinition struct {
+	Name        string                         `json:"name"`
+	Description string                         `json:"description,omitempty"`
+	Parameters  JetbrainsToolParametersWrapper `json:"parameters"`
+}
+
+type JetbrainsToolParametersWrapper struct {
+	Schema map[string]any `json:"schema"`
+}
+
 type ChatCompletionChoice struct {
 	Message      ChatMessage `json:"message"`
 	Index        int         `json:"index"`
@@ -158,7 +169,7 @@ type StreamResponse struct {
 	Choices []StreamChoice `json:"choices"`
 }
 
-// JetbrainsMessage updated to support media messages (v8 API)
+// JetbrainsMessage updated to support v8 API format including tool calls
 type JetbrainsMessage struct {
 	Type         string                 `json:"type"`
 	Content      string                 `json:"content,omitempty"`
@@ -166,6 +177,10 @@ type JetbrainsMessage struct {
 	Data         string                 `json:"data,omitempty"`      // New field for v8 image data
 	FunctionCall *JetbrainsFunctionCall `json:"functionCall,omitempty"`
 	FunctionName string                 `json:"functionName,omitempty"`
+	// New fields for v8 tool calls
+	ID       string `json:"id,omitempty"`       // Tool call ID
+	ToolName string `json:"toolName,omitempty"` // Tool name
+	Result   string `json:"result,omitempty"`   // Tool result
 }
 
 type JetbrainsFunctionCall struct {
@@ -189,7 +204,8 @@ type JetbrainsParameters struct {
 }
 
 type JetbrainsData struct {
-	Type  string `json:"type"`
-	FQDN  string `json:"fqdn,omitempty"`
-	Value string `json:"value,omitempty"`
+	Type     string `json:"type"`
+	FQDN     string `json:"fqdn,omitempty"`
+	Value    string `json:"value,omitempty"`
+	Modified int64  `json:"modified,omitempty"`
 }

@@ -125,7 +125,6 @@ func chatCompletions(c *gin.Context) {
 	}
 
 	var data []JetbrainsData
-	var tools []ToolFunction
 	if len(request.Tools) > 0 {
 		toolsCacheKey := generateToolsCacheKey(request.Tools)
 		validatedToolsAny, found := toolsValidationCache.Get(toolsCacheKey)
@@ -151,11 +150,19 @@ func chatCompletions(c *gin.Context) {
 		}
 
 		if len(validatedTools) > 0 {
-			data = append(data, JetbrainsData{Type: "json", FQDN: "llm.parameters.functions"})
+			data = append(data, JetbrainsData{Type: "json", FQDN: "llm.parameters.tools"})
+			// 转换为JetBrains格式
+			var jetbrainsTools []JetbrainsToolDefinition
 			for _, tool := range validatedTools {
-				tools = append(tools, tool.Function)
+				jetbrainsTools = append(jetbrainsTools, JetbrainsToolDefinition{
+					Name:        tool.Function.Name,
+					Description: tool.Function.Description,
+					Parameters: JetbrainsToolParametersWrapper{
+						Schema: tool.Function.Parameters,
+					},
+				})
 			}
-			toolsJSON, marshalErr := marshalJSON(tools)
+			toolsJSON, marshalErr := marshalJSON(jetbrainsTools)
 			if marshalErr != nil {
 				recordFailureWithTimer(startTime, request.Model, accountIdentifier)
 				respondWithError(c, http.StatusInternalServerError, "Failed to marshal tools")
@@ -165,6 +172,18 @@ func chatCompletions(c *gin.Context) {
 				log.Printf("Transformed tools for JetBrains API: %s", string(toolsJSON))
 			}
 			data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
+			// 添加modified字段，模拟preview.json的格式
+			modifiedTime := time.Now().UnixMilli()
+			if len(data) > 1 {
+				// 为第二个data项（工具定义）添加modified字段
+				lastIndex := len(data) - 1
+				modifiedData := JetbrainsData{
+					Type:     data[lastIndex].Type,
+					Value:    data[lastIndex].Value,
+					Modified: modifiedTime,
+				}
+				data[lastIndex] = modifiedData
+			}
 			if shouldForceToolUse(request) {
 				jetbrainsMessages = openAIToJetbrainsMessages(enhancePromptForToolUse(request.Messages, request.Tools))
 				if gin.Mode() == gin.DebugMode {
@@ -196,6 +215,7 @@ func chatCompletions(c *gin.Context) {
 		log.Printf("=== JetBrains API Request Debug ===")
 		log.Printf("Model: %s -> %s", request.Model, internalModel)
 		log.Printf("Payload size: %d bytes", len(payloadBytes))
+		log.Printf("Complete payload: %s", string(payloadBytes))
 		log.Printf("=== End Debug ===")
 	}
 

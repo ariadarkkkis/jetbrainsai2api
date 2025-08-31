@@ -4,7 +4,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -90,11 +89,6 @@ func main() {
 
 	// Set up graceful shutdown
 	setupGracefulShutdown()
-
-	// Start pprof server
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
 
 	r := setupRoutes()
 

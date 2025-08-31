@@ -41,9 +41,6 @@ go fmt ./...
 
 # 代码检查
 go vet ./...
-
-# 性能分析（启动后访问 http://localhost:6060/debug/pprof/）
-# pprof 会在 main.go 中自动启用
 ```
 
 ### 环境配置
@@ -73,7 +70,7 @@ docker-compose up -d
 ## 核心架构
 
 ### 项目文件结构
-- `main.go`: 主程序入口，HTTP 服务器初始化、pprof 性能分析、信号处理
+- `main.go`: 主程序入口，HTTP 服务器初始化、信号处理
 - `routes.go`: API 路由定义和中间件配置（CORS、请求超时等）
 - `handlers.go`: HTTP 请求处理器，包含认证逻辑和工具调用处理
 - `jetbrains_api.go`: JetBrains API 交互和账户管理，JWT 刷新机制
@@ -91,7 +88,7 @@ docker-compose up -d
 
 ### 核心组件
 
-- **HTTP 服务器** (`main.go`): 基于 Gin 框架，集成 pprof 性能分析、优雅停机处理
+- **HTTP 服务器** (`main.go`): 基于 Gin 框架，雅停机处理
 - **统一 JSON 处理** (`cache.go` `marshalJSON`): 全面使用 ByteDance Sonic 库，提升性能 2-5x
 - **账户池管理** (`jetbrains_api.go`): 
   - 多账户负载均衡和故障转移
@@ -160,10 +157,7 @@ docker-compose up -d
 ## 调试和故障排除
 
 ### 性能分析和调试工具
-- **pprof 性能分析**: 服务启动时自动在端口 6060 启用，访问 `http://localhost:6060/debug/pprof/`
-  - CPU 分析: `curl http://localhost:6060/debug/pprof/profile?seconds=30`
-  - 内存分析: `go tool pprof http://localhost:6060/debug/pprof/heap`
-  - goroutine 分析: `curl http://localhost:6060/debug/pprof/goroutine?debug=1`
+
 - **实时缓存监控**: 通过统计面板查看缓存命中率和性能指标
 - **错误率监控**: `performance.go` 提供错误率计算和异常检测
 - **JSON 性能监控**: 重构后使用 Sonic 库，可通过 expvar 监控序列化性能

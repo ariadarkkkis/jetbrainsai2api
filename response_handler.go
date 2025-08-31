@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +15,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// generateShortToolCallID generates a tool call ID that fits JetBrains 40-char limit
+func generateShortToolCallID() string {
+	// Generate 16 random bytes and encode as hex (32 chars) + "call_" prefix (5 chars) = 37 chars total
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return fmt.Sprintf("call_%s", hex.EncodeToString(bytes))
+}
 
 // processJetbrainsStream processes the event stream from the JetBrains API.
 // It calls the provided onEvent function for each event in the stream.
@@ -82,6 +92,28 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 			respJSON, _ := marshalJSON(streamResp)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Flush()
+		case "ToolCall":
+			// 处理新的ToolCall格式
+			if name, ok := data["name"].(string); ok && name != "" {
+				// 开始新的工具调用
+				currentTool = &map[string]any{
+					"index": 0,
+					"id":    generateShortToolCallID(),
+					"function": map[string]any{
+						"arguments": "",
+						"name":      name,
+					},
+					"type": "function",
+				}
+			} else if currentTool != nil {
+				// 累积参数内容
+				if content, ok := data["content"].(string); ok {
+					if funcMap, ok := (*currentTool)["function"].(map[string]any); ok {
+						currentArgs, _ := funcMap["arguments"].(string)
+						funcMap["arguments"] = currentArgs + content
+					}
+				}
+			}
 		case "FunctionCall":
 			funcNameInterface := data["name"]
 			funcArgs, _ := data["content"].(string)
@@ -96,7 +128,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 			if funcName != "" {
 				currentTool = &map[string]any{
 					"index": 0,
-					"id":    fmt.Sprintf("call_%s", uuid.New().String()),
+					"id":    generateShortToolCallID(),
 					"function": map[string]any{
 						"arguments": "",
 						"name":      funcName,
@@ -172,6 +204,16 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 			if content, ok := data["content"].(string); ok {
 				contentBuilder.WriteString(content)
 			}
+		case "ToolCall":
+			// 处理新的ToolCall格式
+			if name, ok := data["name"].(string); ok && name != "" {
+				// 开始新的工具调用
+				currentFuncName = name
+				currentFuncArgs = ""
+			} else if content, ok := data["content"].(string); ok {
+				// 累积参数内容
+				currentFuncArgs += content
+			}
 		case "FunctionCall":
 			funcNameInterface := data["name"]
 			funcArgs, _ := data["content"].(string)
@@ -191,7 +233,7 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 		case "FinishMetadata":
 			if currentFuncName != "" {
 				toolCall := ToolCall{
-					ID:   fmt.Sprintf("call_%s", uuid.New().String()),
+					ID:   generateShortToolCallID(),
 					Type: "function",
 					Function: Function{
 						Name:      currentFuncName,

@@ -380,13 +380,6 @@ go build -o jetbrainsai2api *.go
 - **错误处理**: 统一错误处理模式，提高系统稳定性
 - **类型安全**: 强化类型检查，减少运行时错误
 
-### 性能分析
-```bash
-# 启用pprof性能分析（端口6060）
-# 服务启动后访问: http://localhost:6060/debug/pprof/
-curl http://localhost:6060/debug/pprof/goroutine?debug=1
-```
-
 ### 代码质量工具
 ```bash
 # 代码格式化
@@ -467,12 +460,13 @@ curl http://localhost:7860/api/stats | jq '.tokensInfo'
 #### 性能问题
 ```bash
 # 问题: 响应时间过长
-# 解决: 检查连接池和缓存配置
-curl http://localhost:6060/debug/pprof/profile?seconds=30
+# 解决: 检查连接池和缓存配置，监控Web界面查看QPS和响应时间
+curl http://localhost:7860/api/stats | jq '.performance'
 
-# 问题: 内存泄漏
-# 解决: 分析heap dump
-go tool pprof http://localhost:6060/debug/pprof/heap
+# 问题: 内存使用过高
+# 解决: 启用race检测模式运行，检查并发问题
+go build -race -o jetbrainsai2api *.go
+GIN_MODE=debug ./jetbrainsai2api
 ```
 
 #### 工具调用问题
@@ -490,7 +484,7 @@ GIN_MODE=debug ./jetbrainsai2api
 - **实时监控**: Web界面 `http://localhost:7860/`
 - **健康检查**: `curl http://localhost:7860/health`
 - **统计API**: `curl http://localhost:7860/api/stats`
-- **性能分析**: `http://localhost:6060/debug/pprof/`
+- **性能监控**: 通过统计面板查看QPS、响应时间和缓存命中率
 
 ### 日志说明
 ```bash
