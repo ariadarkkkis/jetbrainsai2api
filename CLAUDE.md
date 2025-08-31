@@ -71,6 +71,7 @@ docker-compose up -d
 
 ### 项目文件结构
 - `main.go`: 主程序入口，HTTP 服务器初始化、信号处理
+- `logger.go`: 统一日志管理系统，支持分级日志输出 (**最新**)
 - `routes.go`: API 路由定义和中间件配置（CORS、请求超时等）
 - `handlers.go`: HTTP 请求处理器，包含认证逻辑和工具调用处理
 - `jetbrains_api.go`: JetBrains API 交互和账户管理，JWT 刷新机制
@@ -88,7 +89,11 @@ docker-compose up -d
 
 ### 核心组件
 
-- **HTTP 服务器** (`main.go`): 基于 Gin 框架，雅停机处理
+- **HTTP 服务器** (`main.go`): 基于 Gin 框架，优雅停机处理
+- **统一日志系统** (`logger.go`): 基于接口的分级日志管理 (**最新**)
+  - Debug/Info/Warn/Error/Fatal 统一接口
+  - 自动调试模式检测，仅在 debug 模式下输出调试日志
+  - 消除47处重复的调试检查模式，显著提升代码可维护性
 - **统一 JSON 处理** (`cache.go` `marshalJSON`): 全面使用 ByteDance Sonic 库，提升性能 2-5x
 - **账户池管理** (`jetbrains_api.go`): 
   - 多账户负载均衡和故障转移
@@ -115,9 +120,17 @@ docker-compose up -d
   - Web 界面监控面板 (`static/index.html`)
   - 统计数据持久化存储 (`storage.go`)
 
-## 重构关键点 (v2024.8)
+## 重构关键点 (最新)
 
-### JSON 序列化优化
+### 统一日志处理系统重构
+- **新增**: `logger.go` - 统一的日志管理系统
+- **解决**: 消除47处重复的 `if IsDebug() { log.Printf(...) }` 模式
+- **改进**: 统一使用 Debug/Info/Warn/Error/Fatal 接口替代分散的日志调用
+- **现代化**: 将 `interface{}` 替换为 `any` 类型别名
+- **性能优化**: 减少条件检查开销，提升调试模式性能
+- **架构原则**: 严格遵循 SOLID 原则 (SRP/OCP/DIP) 和 DRY/KISS 设计哲学
+
+### JSON 序列化优化 (v2024.8)
 - **问题**: 代码中混用 `encoding/json` 和 `github.com/bytedance/sonic`
 - **解决**: 统一使用 `marshalJSON` 函数封装 Sonic 库
 - **影响文件**: `tools_validator.go`, `cache.go`, `converter.go`
@@ -182,7 +195,9 @@ docker-compose up -d
   - 确保 `tool_choice` 参数正确设置（支持 "auto", "required", "any" 等）
 
 ### 开发最佳实践
+- **日志处理**: 始终使用统一的 Debug/Info/Warn/Error/Fatal 接口，不要直接调用 log.Printf (**最新**)
 - **JSON 处理**: 始终使用 `marshalJSON` 函数，不要直接调用 `sonic.Marshal`
+- **类型声明**: 使用现代化的 `any` 类型别名替代 `interface{}`
 - **缓存键生成**: 使用现有的缓存键生成函数，确保一致性
 - **错误处理**: 遵循项目中统一的错误处理模式
 - **性能考虑**: 利用现有的缓存系统，避免重复计算
