@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -39,12 +38,12 @@ var (
 func main() {
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+		Info("No .env file found, using system environment variables")
 	}
 
 	// Initialize storage and load statistics
 	if err := initStorage(); err != nil {
-		log.Fatalf("Failed to initialize storage: %v", err)
+		Fatal("Failed to initialize storage: %v", err)
 	}
 	loadStats()
 
@@ -92,11 +91,11 @@ func main() {
 
 	r := setupRoutes()
 
-	log.Println("Starting JetBrains AI OpenAI Compatible API server...")
+	Info("Starting JetBrains AI OpenAI Compatible API server...")
 	port := getEnvWithDefault("PORT", "7860")
 
 	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		Fatal("Failed to start server: %v", err)
 	}
 }
 
@@ -105,7 +104,7 @@ func setupGracefulShutdown() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		log.Println("Shutdown signal received, saving statistics before exiting...")
+		Info("Shutdown signal received, saving statistics before exiting...")
 		saveStats()
 		os.Exit(0)
 	}()
@@ -113,12 +112,12 @@ func setupGracefulShutdown() {
 
 func initAccountPool() {
 	if len(jetbrainsAccounts) == 0 {
-		log.Println("Warning: No JetBrains accounts loaded, account pool is empty.")
+		Warn("No JetBrains accounts loaded, account pool is empty.")
 		return
 	}
 	accountPool = make(chan *JetbrainsAccount, len(jetbrainsAccounts))
 	for i := range jetbrainsAccounts {
 		accountPool <- &jetbrainsAccounts[i]
 	}
-	log.Printf("Account pool initialized with %d accounts", len(jetbrainsAccounts))
+	Info("Account pool initialized with %d accounts", len(jetbrainsAccounts))
 }

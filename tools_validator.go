@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"sync"
@@ -43,43 +42,31 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	}
 	validationCacheMutex.RUnlock()
 
-	if IsDebug() {
-		log.Printf("=== TOOL VALIDATION DEBUG START ===")
-		log.Printf("Original tools count: %d", len(tools))
-		for i, tool := range tools {
-			log.Printf("Original tool %d: %s", i, toJSONString(tool))
-		}
+	Debug("=== TOOL VALIDATION DEBUG START ===")
+	Debug("Original tools count: %d", len(tools))
+	for i, tool := range tools {
+		Debug("Original tool %d: %s", i, toJSONString(tool))
 	}
 
 	validatedTools := make([]Tool, 0, len(tools))
 
 	for i, tool := range tools {
-		if IsDebug() {
-			log.Printf("Processing tool %d: %s", i, tool.Function.Name)
-		}
+		Debug("Processing tool %d: %s", i, tool.Function.Name)
 
 		// 验证工具名称
 		if !isValidParamName(tool.Function.Name) {
-			if IsDebug() {
-				log.Printf("Invalid tool name: %s, skipping tool", tool.Function.Name)
-			}
+			Debug("Invalid tool name: %s, skipping tool", tool.Function.Name)
 			continue
 		}
 
 		// 验证和转换参数
-		if IsDebug() {
-			log.Printf("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
-		}
+		Debug("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
 		transformedParams, err := transformParameters(tool.Function.Parameters)
 		if err != nil {
-			if IsDebug() {
-				log.Printf("Failed to transform tool %s parameters: %v", tool.Function.Name, err)
-			}
+			Debug("Failed to transform tool %s parameters: %v", tool.Function.Name, err)
 			continue
 		}
-		if IsDebug() {
-			log.Printf("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
-		}
+		Debug("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
 
 		// 创建新的工具对象
 		validatedTool := Tool{
@@ -92,16 +79,12 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 		}
 
 		validatedTools = append(validatedTools, validatedTool)
-		if IsDebug() {
-			log.Printf("Successfully validated tool: %s", tool.Function.Name)
-		}
+		Debug("Successfully validated tool: %s", tool.Function.Name)
 	}
 
-	if IsDebug() {
-		log.Printf("Final validated tools count: %d", len(validatedTools))
-		log.Printf("Final validated tools: %s", toJSONString(validatedTools))
-		log.Printf("=== TOOL VALIDATION DEBUG END ===")
-	}
+	Debug("Final validated tools count: %d", len(validatedTools))
+	Debug("Final validated tools: %s", toJSONString(validatedTools))
+	Debug("=== TOOL VALIDATION DEBUG END ===")
 
 	// 缓存验证结果
 	validationCacheMutex.Lock()
@@ -120,7 +103,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 }
 
 // toJSONString 将对象转换为JSON字符串，用于日志记录
-func toJSONString(v interface{}) string {
+func toJSONString(v any) string {
 	data, err := marshalJSON(v)
 	if err != nil {
 		return fmt.Sprintf("<error: %v>", err)
@@ -177,11 +160,11 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 	// Transform properties
 	if properties, ok := params["properties"].(map[string]any); ok {
 		propCount := len(properties)
-		log.Printf("Processing %d properties for parameter transformation", propCount)
+		Debug("Processing %d properties for parameter transformation", propCount)
 
 		// If there are too many properties, we need to be more aggressive about simplification
 		if propCount > 15 { // Raised threshold from 10 to 15 for edge cases
-			log.Printf("Tool has %d properties (>15), applying EXTREME simplification for tool usage guarantee", propCount)
+			Debug("Tool has %d properties (>15), applying EXTREME simplification for tool usage guarantee", propCount)
 			// EXTREME SIMPLIFICATION: For very complex tools, convert to single string parameter
 			// BUT also provide some original parameters to satisfy validation
 			resultProps := map[string]any{
@@ -303,7 +286,7 @@ func transformPropertySchema(schema any) (map[string]any, error) {
 
 	// Handle anyOf, oneOf, allOf by converting to most simple usable format
 	if anyOfSchema, ok := schemaMap["anyOf"]; ok {
-		log.Printf("SIMPLIFYING anyOf schema for guaranteed tool usage: %s", toJSONString(anyOfSchema))
+		Debug("SIMPLIFYING anyOf schema for guaranteed tool usage: %s", toJSONString(anyOfSchema))
 
 		// AGGRESSIVE SIMPLIFICATION: Convert to string with clear instructions
 		result["type"] = "string"
@@ -330,12 +313,12 @@ func transformPropertySchema(schema any) (map[string]any, error) {
 			result["description"] = "Multi-type field - provide as string (use 'null' for null values)"
 		}
 
-		log.Printf("CONVERTED anyOf to simple string type with description: %s", result["description"])
+		Debug("CONVERTED anyOf to simple string type with description: %s", result["description"])
 		return result, nil
 	}
 
 	if _, ok := schemaMap["oneOf"]; ok {
-		log.Printf("Simplifying oneOf schema to string type for JetBrains compatibility")
+		Debug("Simplifying oneOf schema to string type for JetBrains compatibility")
 		result["type"] = "string"
 		if desc, hasDesc := schemaMap["description"]; hasDesc {
 			result["description"] = desc
@@ -346,7 +329,7 @@ func transformPropertySchema(schema any) (map[string]any, error) {
 	}
 
 	if _, ok := schemaMap["allOf"]; ok {
-		log.Printf("Simplifying allOf schema to string type for JetBrains compatibility")
+		Debug("Simplifying allOf schema to string type for JetBrains compatibility")
 		result["type"] = "string"
 		if desc, hasDesc := schemaMap["description"]; hasDesc {
 			result["description"] = desc

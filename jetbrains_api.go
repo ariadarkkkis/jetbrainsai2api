@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -35,7 +34,7 @@ func handleJWTExpiredAndRetry(req *http.Request, account *JetbrainsAccount) (*ht
 
 	if resp.StatusCode == 401 && account.LicenseID != "" {
 		resp.Body.Close()
-		log.Printf("JWT for %s expired, refreshing...", getTokenDisplayName(account))
+		Info("JWT for %s expired, refreshing...", getTokenDisplayName(account))
 
 		jwtRefreshMutex.Lock()
 		// Check if another goroutine already refreshed the JWT
@@ -82,7 +81,7 @@ func checkQuota(account *JetbrainsAccount) error {
 
 // refreshJetbrainsJWT refreshes the JWT for a given JetBrains account
 func refreshJetbrainsJWT(account *JetbrainsAccount) error {
-	log.Printf("Refreshing JWT for licenseId %s...", account.LicenseID)
+	Info("Refreshing JWT for licenseId %s...", account.LicenseID)
 
 	payload := map[string]string{"licenseId": account.LicenseID}
 	req, err := createJetbrainsRequest("POST", "https://api.jetbrains.ai/auth/jetbrains-jwt/provide-access/license/v2", payload, account.Authorization)
@@ -117,14 +116,14 @@ func refreshJetbrainsJWT(account *JetbrainsAccount) error {
 		// Parse the JWT to get the expiration time
 		token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, jwt.MapClaims{})
 		if err != nil {
-			log.Printf("Warning: could not parse JWT: %v", err)
+			Warn("could not parse JWT: %v", err)
 		} else if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			if exp, ok := claims["exp"].(float64); ok {
 				account.ExpiryTime = time.Unix(int64(exp), 0)
 			}
 		}
 
-		log.Printf("Successfully refreshed JWT for licenseId %s, expires at %s", account.LicenseID, account.ExpiryTime.Format(time.RFC3339))
+		Info("Successfully refreshed JWT for licenseId %s, expires at %s", account.LicenseID, account.ExpiryTime.Format(time.RFC3339))
 		return nil
 	}
 
@@ -155,7 +154,7 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		if account.LicenseID != "" {
 			if account.JWT == "" || time.Now().After(account.ExpiryTime.Add(-JWTRefreshTime)) {
 				if err := refreshJetbrainsJWT(account); err != nil {
-					log.Printf("Failed to refresh JWT for %s: %v", getTokenDisplayName(account), err)
+					Error("Failed to refresh JWT for %s: %v", getTokenDisplayName(account), err)
 					RecordAccountPoolError()
 					return nil, err // Return error to retry with another account
 				}
@@ -164,7 +163,7 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 
 		// 检查配额
 		if err := checkQuota(account); err != nil {
-			log.Printf("Failed to check quota for %s: %v", getTokenDisplayName(account), err)
+			Error("Failed to check quota for %s: %v", getTokenDisplayName(account), err)
 			RecordAccountPoolError()
 			return nil, err // Return error to retry
 		}
@@ -192,7 +191,7 @@ func processQuotaData(quotaData *JetbrainsQuotaResponse, account *JetbrainsAccou
 
 	account.HasQuota = dailyUsed < dailyTotal
 	if !account.HasQuota {
-		log.Printf("Account %s has no quota", getTokenDisplayName(account))
+		Warn("Account %s has no quota", getTokenDisplayName(account))
 	}
 
 	account.LastQuotaCheck = float64(time.Now().Unix())
@@ -256,7 +255,7 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 
 	if IsDebug() {
 		quotaJSON, _ := sonic.MarshalIndent(quotaData, "", "  ")
-		log.Printf("JetBrains Quota API Response: %s", string(quotaJSON))
+		Debug("JetBrains Quota API Response: %s", string(quotaJSON))
 	}
 
 	processQuotaData(&quotaData, account)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/bytedance/sonic"
-	"log"
 	"os"
 	"time"
 )
@@ -13,7 +12,7 @@ func loadModels() ModelsData {
 
 	data, err := os.ReadFile("models.json")
 	if err != nil {
-		log.Printf("Error loading models.json: %v", err)
+		Error("Error loading models.json: %v", err)
 		return result
 	}
 
@@ -22,7 +21,7 @@ func loadModels() ModelsData {
 		// Try old format (string array)
 		var modelIDs []string
 		if err := sonic.Unmarshal(data, &modelIDs); err != nil {
-			log.Printf("Error parsing models.json: %v", err)
+			Error("Error parsing models.json: %v", err)
 			return result
 		}
 		// Convert to new format
@@ -42,7 +41,7 @@ func loadModels() ModelsData {
 		})
 	}
 
-	log.Printf("Loaded %d models from models.json", len(config.Models))
+	Info("Loaded %d models from models.json", len(config.Models))
 	return result
 }
 
@@ -55,9 +54,9 @@ func loadClientAPIKeys() {
 	}
 
 	if len(validClientKeys) == 0 {
-		log.Println("Warning: CLIENT_API_KEYS environment variable is empty")
+		Warn("CLIENT_API_KEYS environment variable is empty")
 	} else {
-		log.Printf("Successfully loaded %d client API keys from environment", len(validClientKeys))
+		Info("Successfully loaded %d client API keys from environment", len(validClientKeys))
 	}
 }
 
@@ -97,9 +96,9 @@ func loadJetbrainsAccounts() {
 	}
 
 	if len(jetbrainsAccounts) == 0 {
-		log.Println("Warning: No valid JetBrains accounts found in environment variables")
+		Warn("No valid JetBrains accounts found in environment variables")
 	} else {
-		log.Printf("Successfully loaded %d JetBrains AI accounts from environment", len(jetbrainsAccounts))
+		Info("Successfully loaded %d JetBrains AI accounts from environment", len(jetbrainsAccounts))
 	}
 }
 

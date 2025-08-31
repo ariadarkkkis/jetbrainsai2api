@@ -12,8 +12,14 @@ import (
 )
 
 // IsDebug returns true if the application is running in debug mode
+// 保留此函数以维持向下兼容性
 func IsDebug() bool {
 	return gin.Mode() == gin.DebugMode
+}
+
+// InitLogger 初始化应用程序日志系统
+func InitLogger() {
+	// 日志系统已在logger.go中自动初始化
 }
 
 // extractTextContent extracts text from a message's content field.
@@ -75,7 +81,7 @@ func getEnvWithDefault(key, defaultValue string) string {
 }
 
 // createJetbrainsRequest creates an HTTP request for JetBrains API with standard headers
-func createJetbrainsRequest(method, url string, payload interface{}, authorization string) (*http.Request, error) {
+func createJetbrainsRequest(method, url string, payload any, authorization string) (*http.Request, error) {
 	var body io.Reader
 
 	if payload != nil {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -95,7 +94,7 @@ func chatCompletions(c *gin.Context) {
 			// Returned successfully
 		default:
 			// Pool is full, which shouldn't happen if managed correctly.
-			log.Printf("Warning: account pool is full. Could not return account.")
+			Warn("account pool is full. Could not return account.")
 		}
 	}()
 
@@ -118,9 +117,7 @@ func chatCompletions(c *gin.Context) {
 	if len(request.Tools) > 0 {
 		if request.ToolChoice == nil {
 			request.ToolChoice = "any"
-			if IsDebug() {
-				log.Printf("FORCING tool_choice to 'any' for tool usage guarantee")
-			}
+			Debug("FORCING tool_choice to 'any' for tool usage guarantee")
 		}
 	}
 
@@ -168,9 +165,7 @@ func chatCompletions(c *gin.Context) {
 				respondWithError(c, http.StatusInternalServerError, "Failed to marshal tools")
 				return
 			}
-			if IsDebug() {
-				log.Printf("Transformed tools for JetBrains API: %s", string(toolsJSON))
-			}
+			Debug("Transformed tools for JetBrains API: %s", string(toolsJSON))
 			data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
 			// 添加modified字段，模拟preview.json的格式
 			modifiedTime := time.Now().UnixMilli()
@@ -186,9 +181,7 @@ func chatCompletions(c *gin.Context) {
 			}
 			if shouldForceToolUse(request) {
 				jetbrainsMessages = openAIToJetbrainsMessages(request.Messages)
-				if IsDebug() {
-					log.Printf("Using original messages for tool usage")
-				}
+				Debug("Using original messages for tool usage")
 			}
 		}
 	}
@@ -211,13 +204,11 @@ func chatCompletions(c *gin.Context) {
 		return
 	}
 
-	if IsDebug() {
-		log.Printf("=== JetBrains API Request Debug ===")
-		log.Printf("Model: %s -> %s", request.Model, internalModel)
-		log.Printf("Payload size: %d bytes", len(payloadBytes))
-		log.Printf("Complete payload: %s", string(payloadBytes))
-		log.Printf("=== End Debug ===")
-	}
+	Debug("=== JetBrains API Request Debug ===")
+	Debug("Model: %s -> %s", request.Model, internalModel)
+	Debug("Payload size: %d bytes", len(payloadBytes))
+	Debug("Complete payload: %s", string(payloadBytes))
+	Debug("=== End Debug ===")
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v8", bytes.NewBuffer(payloadBytes))
 	if err != nil {
@@ -239,12 +230,10 @@ func chatCompletions(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	if IsDebug() {
-		log.Printf("JetBrains API Response Status: %d", resp.StatusCode)
-	}
+	Debug("JetBrains API Response Status: %d", resp.StatusCode)
 
 	if resp.StatusCode == 477 {
-		log.Printf("Account %s has no quota (received 477)", getTokenDisplayName(account))
+		Warn("Account %s has no quota (received 477)", getTokenDisplayName(account))
 		account.HasQuota = false
 		account.LastQuotaCheck = float64(time.Now().Unix())
 	}
@@ -252,7 +241,7 @@ func chatCompletions(c *gin.Context) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		errorMsg := string(body)
-		log.Printf("JetBrains API Error: Status %d, Body: %s", resp.StatusCode, errorMsg)
+		Error("JetBrains API Error: Status %d, Body: %s", resp.StatusCode, errorMsg)
 		recordFailureWithTimer(startTime, request.Model, accountIdentifier)
 		c.JSON(resp.StatusCode, gin.H{"error": errorMsg})
 		return

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"github.com/bytedance/sonic"
@@ -76,7 +75,7 @@ func NewRedisStorage(redisURL string) (*RedisStorage, error) {
 		return nil, err
 	}
 
-	log.Printf("Successfully connected to Redis")
+	Info("Successfully connected to Redis")
 	return &RedisStorage{
 		client: client,
 		ctx:    ctx,
@@ -132,16 +131,16 @@ func initStorage() error {
 		// Use Redis storage
 		redisStorage, err := NewRedisStorage(redisURL)
 		if err != nil {
-			log.Printf("Failed to initialize Redis storage: %v, falling back to file storage", err)
+			Error("Failed to initialize Redis storage: %v, falling back to file storage", err)
 			storage = &FileStorage{}
 		} else {
 			storage = redisStorage
-			log.Printf("Using Redis storage")
+			Info("Using Redis storage")
 		}
 	} else {
 		// Use file storage
 		storage = &FileStorage{}
-		log.Printf("Using file storage")
+		Info("Using file storage")
 	}
 
 	return nil
@@ -153,7 +152,7 @@ func saveStatsWithStorage() {
 	defer statsMutex.Unlock()
 
 	if err := storage.SaveStats(&requestStats); err != nil {
-		log.Printf("Error saving stats: %v", err)
+		Error("Error saving stats: %v", err)
 	}
 }
 
@@ -164,7 +163,7 @@ func loadStatsWithStorage() {
 
 	stats, err := storage.LoadStats()
 	if err != nil {
-		log.Printf("Error loading stats: %v", err)
+		Error("Error loading stats: %v", err)
 		// Initialize with empty stats if loading fails
 		requestStats = RequestStats{
 			RequestHistory: []RequestRecord{},
@@ -173,5 +172,5 @@ func loadStatsWithStorage() {
 	}
 
 	requestStats = *stats
-	log.Printf("Successfully loaded %d request records", len(requestStats.RequestHistory))
+	Info("Successfully loaded %d request records", len(requestStats.RequestHistory))
 }

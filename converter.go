@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/bytedance/sonic"
 )
 
@@ -32,7 +30,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 			if hasImage {
 				// Validate the image
 				if err := validator.ValidateImageData(mediaType, imageData); err != nil {
-					log.Printf("Image validation failed: %v", err)
+					Warn("Image validation failed: %v", err)
 					// Continue with text content only if image validation fails
 					jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 						Type:    "user_message",
@@ -102,7 +100,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 					Result:   textContent,
 				})
 			} else {
-				log.Printf("Warning: Cannot find function name for tool_call_id %s", msg.ToolCallID)
+				Warn("Cannot find function name for tool_call_id %s", msg.ToolCallID)
 			}
 		default:
 			jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{

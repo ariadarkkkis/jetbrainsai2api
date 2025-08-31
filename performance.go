@@ -267,12 +267,10 @@ func StartMetricsMonitor() {
 				}
 
 				// 在debug模式下输出性能指标
-				if IsDebug() {
-					fmt.Printf("=== 性能监控报告 ===\n")
-					fmt.Printf("当前QPS: %.2f\n", GetQPS())
-					fmt.Printf("%s\n", GetMetricsString())
-					fmt.Printf("====================\n")
-				}
+				Debug("=== 性能监控报告 ===")
+				Debug("当前QPS: %.2f", GetQPS())
+				Debug("%s", GetMetricsString())
+				Debug("====================")
 			case <-monitorCtx.Done():
 				// 收到停止信号，优雅退出监控 goroutine
 				return

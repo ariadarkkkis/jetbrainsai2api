@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -38,7 +37,7 @@ func processJetbrainsStream(resp *http.Response, onEvent func(event map[string]a
 		dataStr := line[6:]
 		var data map[string]any
 		if err := sonic.Unmarshal([]byte(dataStr), &data); err != nil {
-			log.Printf("Error unmarshalling stream event: %v", err)
+			Error("Error unmarshalling stream event: %v", err)
 			continue
 		}
 
@@ -149,7 +148,7 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 						// Try to validate JSON format
 						var argsTest map[string]any
 						if err := sonic.Unmarshal([]byte(args), &argsTest); err != nil {
-							log.Printf("Warning: Tool call arguments are not valid JSON: %v", err)
+							Warn("Tool call arguments are not valid JSON: %v", err)
 						}
 					}
 				}
@@ -243,7 +242,7 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 
 				// Validate the tool call before adding it
 				if err := validateToolCallResponse(toolCall); err != nil {
-					log.Printf("Warning: Invalid tool call response: %v", err)
+					Warn("Invalid tool call response: %v", err)
 					// Still add it but log the issue
 				}
 
