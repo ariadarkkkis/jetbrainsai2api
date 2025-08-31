@@ -7,8 +7,6 @@ import (
 	"runtime"
 	"sync"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 // PerformanceMetrics 性能指标收集器
@@ -269,7 +267,7 @@ func StartMetricsMonitor() {
 				}
 
 				// 在debug模式下输出性能指标
-				if gin.Mode() == gin.DebugMode {
+				if IsDebug() {
 					fmt.Printf("=== 性能监控报告 ===\n")
 					fmt.Printf("当前QPS: %.2f\n", GetQPS())
 					fmt.Printf("%s\n", GetMetricsString())

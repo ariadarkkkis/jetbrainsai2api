@@ -42,6 +42,13 @@ func showStatsPage(c *gin.Context) {
 
 // getStatsData 获取统计数据的JSON API端点
 func getStatsData(c *gin.Context) {
+	// 清除配额缓存，强制从上游重新获取配额信息
+	quotaCacheMutex.Lock()
+	for key := range accountQuotaCache {
+		delete(accountQuotaCache, key)
+	}
+	quotaCacheMutex.Unlock()
+
 	// 获取Token信息
 	var tokensInfo []gin.H
 	for i := range jetbrainsAccounts {

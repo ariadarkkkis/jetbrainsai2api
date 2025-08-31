@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -44,7 +43,7 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	}
 	validationCacheMutex.RUnlock()
 
-	if gin.Mode() == gin.DebugMode {
+	if IsDebug() {
 		log.Printf("=== TOOL VALIDATION DEBUG START ===")
 		log.Printf("Original tools count: %d", len(tools))
 		for i, tool := range tools {
@@ -55,30 +54,30 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	validatedTools := make([]Tool, 0, len(tools))
 
 	for i, tool := range tools {
-		if gin.Mode() == gin.DebugMode {
+		if IsDebug() {
 			log.Printf("Processing tool %d: %s", i, tool.Function.Name)
 		}
 
 		// 验证工具名称
 		if !isValidParamName(tool.Function.Name) {
-			if gin.Mode() == gin.DebugMode {
+			if IsDebug() {
 				log.Printf("Invalid tool name: %s, skipping tool", tool.Function.Name)
 			}
 			continue
 		}
 
 		// 验证和转换参数
-		if gin.Mode() == gin.DebugMode {
+		if IsDebug() {
 			log.Printf("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
 		}
 		transformedParams, err := transformParameters(tool.Function.Parameters)
 		if err != nil {
-			if gin.Mode() == gin.DebugMode {
+			if IsDebug() {
 				log.Printf("Failed to transform tool %s parameters: %v", tool.Function.Name, err)
 			}
 			continue
 		}
-		if gin.Mode() == gin.DebugMode {
+		if IsDebug() {
 			log.Printf("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
 		}
 
@@ -93,12 +92,12 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 		}
 
 		validatedTools = append(validatedTools, validatedTool)
-		if gin.Mode() == gin.DebugMode {
+		if IsDebug() {
 			log.Printf("Successfully validated tool: %s", tool.Function.Name)
 		}
 	}
 
-	if gin.Mode() == gin.DebugMode {
+	if IsDebug() {
 		log.Printf("Final validated tools count: %d", len(validatedTools))
 		log.Printf("Final validated tools: %s", toJSONString(validatedTools))
 		log.Printf("=== TOOL VALIDATION DEBUG END ===")
@@ -149,125 +148,6 @@ func shouldForceToolUse(request ChatCompletionRequest) bool {
 	}
 
 	return false
-}
-
-// enhancePromptForToolUse enhances the user prompt to encourage tool usage
-func enhancePromptForToolUse(messages []ChatMessage, tools []Tool) []ChatMessage {
-	if len(messages) == 0 || len(tools) == 0 {
-		return messages
-	}
-
-	if gin.Mode() == gin.DebugMode {
-		log.Printf("=== PROMPT ENHANCEMENT DEBUG START ===")
-		log.Printf("Original messages count: %d", len(messages))
-		log.Printf("Tools for enhancement: %d", len(tools))
-	}
-
-	// Get the last user message
-	lastUserIndex := -1
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
-			lastUserIndex = i
-			break
-		}
-	}
-
-	if lastUserIndex == -1 {
-		if gin.Mode() == gin.DebugMode {
-			log.Printf("No user message found, skipping prompt enhancement")
-		}
-		return messages
-	}
-
-	originalContent := extractTextContent(messages[lastUserIndex].Content)
-	if gin.Mode() == gin.DebugMode {
-		log.Printf("Original user message: %s", originalContent)
-	}
-
-	// Create enhanced messages
-	enhancedMessages := make([]ChatMessage, len(messages))
-	copy(enhancedMessages, messages)
-
-	// Build tool usage hint based on tool types
-	// Special handling for complex tools with nested objects
-	var toolInstructions []string
-	var hasComplexTools bool
-
-	for _, tool := range tools {
-		toolDesc := fmt.Sprintf("'%s'(%s)", tool.Function.Name, tool.Function.Description)
-		toolInstructions = append(toolInstructions, toolDesc)
-
-		// Check if this tool has complex nested parameters
-		params := tool.Function.Parameters
-		if props, ok := params["properties"].(map[string]any); ok {
-			for _, propSchema := range props {
-				if propMap, ok := propSchema.(map[string]any); ok {
-					if propType, ok := propMap["type"].(string); ok && (propType == "object" || propType == "array") {
-						hasComplexTools = true
-						break
-					}
-				}
-			}
-		}
-		if hasComplexTools {
-			break
-		}
-	}
-
-	if gin.Mode() == gin.DebugMode {
-		log.Printf("Detected complex tools: %t", hasComplexTools)
-		log.Printf("Tool instructions: %v", toolInstructions)
-	}
-
-	var complexToolGuidance string
-	if hasComplexTools {
-		complexToolGuidance = `
-SPECIAL INSTRUCTIONS FOR COMPLEX PARAMETERS:
-- For nested object parameters: provide them as properly structured JSON objects
-- For array parameters: provide them as JSON arrays with appropriate values
-- For enum parameters: use ONLY values from the allowed enum list
-- For objects with additionalProperties:false: include ONLY the defined properties
-- Always analyze the user's request to extract the required parameter values
-
-EXAMPLE PATTERNS:
-- If a tool needs user info with address: extract name, age, email from request and provide street, city, country for address
-- If a tool needs task creation with priority: use priority levels like "high", "medium", "low" from enum
-- If a tool needs configuration: extract name and version information from the request`
-	} else {
-		complexToolGuidance = ""
-	}
-
-	enhancedContent := fmt.Sprintf(`%s
-
-🚨🚨🚨 CRITICAL: TOOL-ONLY MODE ACTIVATED 🚨🚨🚨
-
-⛔ FORBIDDEN: Text responses, explanations, questions about parameters
-✅ REQUIRED: Call function immediately with appropriate values
-⚡ MANDATORY: Use one of these functions RIGHT NOW:
-%s
-
-🎯 EXECUTION INSTRUCTIONS:
-1. ANALYZE user request for parameter values
-2. EXTRACT or CREATE reasonable values for required parameters  
-3. CALL the function immediately - NO explanatory text allowed
-4. For missing info: Use sensible defaults (e.g., "示例数据", "null", current date)%s
-
-⚠️ WARNING: Any response without function call will be REJECTED
-🔒 This is TOOL-ONLY mode - function calling is your ONLY allowed response type`,
-		originalContent,
-		strings.Join(toolInstructions, "\n"),
-		complexToolGuidance,
-	)
-
-	if gin.Mode() == gin.DebugMode {
-		log.Printf("Enhanced user message: %s", enhancedContent)
-	}
-	enhancedMessages[lastUserIndex].Content = enhancedContent
-	if gin.Mode() == gin.DebugMode {
-		log.Printf("=== PROMPT ENHANCEMENT DEBUG END ===")
-	}
-
-	return enhancedMessages
 }
 
 // transformParameters transforms complex parameter schemas to JetBrains-compatible format

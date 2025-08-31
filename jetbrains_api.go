@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/bytedance/sonic"
 	"io"
 	"log"
 	"net/http"
@@ -10,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/bytedance/sonic"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -254,7 +254,7 @@ func getQuotaData(account *JetbrainsAccount) (*JetbrainsQuotaResponse, error) {
 	}
 	quotaCacheMutex.Unlock()
 
-	if gin.Mode() == gin.DebugMode {
+	if IsDebug() {
 		quotaJSON, _ := sonic.MarshalIndent(quotaData, "", "  ")
 		log.Printf("JetBrains Quota API Response: %s", string(quotaJSON))
 	}

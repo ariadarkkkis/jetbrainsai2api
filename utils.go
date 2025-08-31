@@ -11,6 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// IsDebug returns true if the application is running in debug mode
+func IsDebug() bool {
+	return gin.Mode() == gin.DebugMode
+}
+
 // extractTextContent extracts text from a message's content field.
 func extractTextContent(content any) string {
 	if content == nil {

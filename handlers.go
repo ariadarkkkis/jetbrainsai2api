@@ -118,7 +118,7 @@ func chatCompletions(c *gin.Context) {
 	if len(request.Tools) > 0 {
 		if request.ToolChoice == nil {
 			request.ToolChoice = "any"
-			if gin.Mode() == gin.DebugMode {
+			if IsDebug() {
 				log.Printf("FORCING tool_choice to 'any' for tool usage guarantee")
 			}
 		}
@@ -168,7 +168,7 @@ func chatCompletions(c *gin.Context) {
 				respondWithError(c, http.StatusInternalServerError, "Failed to marshal tools")
 				return
 			}
-			if gin.Mode() == gin.DebugMode {
+			if IsDebug() {
 				log.Printf("Transformed tools for JetBrains API: %s", string(toolsJSON))
 			}
 			data = append(data, JetbrainsData{Type: "json", Value: string(toolsJSON)})
@@ -185,9 +185,9 @@ func chatCompletions(c *gin.Context) {
 				data[lastIndex] = modifiedData
 			}
 			if shouldForceToolUse(request) {
-				jetbrainsMessages = openAIToJetbrainsMessages(enhancePromptForToolUse(request.Messages, request.Tools))
-				if gin.Mode() == gin.DebugMode {
-					log.Printf("Enhanced messages for tool usage")
+				jetbrainsMessages = openAIToJetbrainsMessages(request.Messages)
+				if IsDebug() {
+					log.Printf("Using original messages for tool usage")
 				}
 			}
 		}
@@ -211,7 +211,7 @@ func chatCompletions(c *gin.Context) {
 		return
 	}
 
-	if gin.Mode() == gin.DebugMode {
+	if IsDebug() {
 		log.Printf("=== JetBrains API Request Debug ===")
 		log.Printf("Model: %s -> %s", request.Model, internalModel)
 		log.Printf("Payload size: %d bytes", len(payloadBytes))
@@ -239,7 +239,7 @@ func chatCompletions(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	if gin.Mode() == gin.DebugMode {
+	if IsDebug() {
 		log.Printf("JetBrains API Response Status: %d", resp.StatusCode)
 	}
 
