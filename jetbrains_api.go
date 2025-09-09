@@ -136,48 +136,88 @@ func getNextJetbrainsAccount() (*JetbrainsAccount, error) {
 		return nil, fmt.Errorf("service unavailable: no JetBrains accounts configured")
 	}
 
-	accountWaitStart := time.Now()
-	select {
-	case account := <-accountPool:
-		// 记录账户池等待时间
-		waitDuration := time.Since(accountWaitStart)
-		if waitDuration > 100*time.Millisecond { // 只记录超过100ms的等待
-			RecordAccountPoolWait(waitDuration)
-		}
+	// Try up to all accounts before giving up
+	maxRetries := len(jetbrainsAccounts)
+	var lastError error
+	var triedAccounts []string
 
-		// Defer re-queueing the account
-		defer func() {
-			accountPool <- account
-		}()
+	for retryCount := 0; retryCount < maxRetries; retryCount++ {
+		accountWaitStart := time.Now()
+		select {
+		case account := <-accountPool:
+			// 记录账户池等待时间
+			waitDuration := time.Since(accountWaitStart)
+			if waitDuration > 100*time.Millisecond { // 只记录超过100ms的等待
+				RecordAccountPoolWait(waitDuration)
+			}
 
-		// 检查JWT是否需要刷新
-		if account.LicenseID != "" {
-			if account.JWT == "" || time.Now().After(account.ExpiryTime.Add(-JWTRefreshTime)) {
-				if err := refreshJetbrainsJWT(account); err != nil {
-					Error("Failed to refresh JWT for %s: %v", getTokenDisplayName(account), err)
-					RecordAccountPoolError()
-					return nil, err // Return error to retry with another account
+			accountName := getTokenDisplayName(account)
+
+			// Skip if we've already tried this account in this round
+			skipAccount := false
+			for _, tried := range triedAccounts {
+				if tried == accountName {
+					skipAccount = true
+					break
 				}
 			}
-		}
 
-		// 检查配额
-		if err := checkQuota(account); err != nil {
-			Error("Failed to check quota for %s: %v", getTokenDisplayName(account), err)
+			if skipAccount {
+				// Return account to pool and continue to next iteration
+				go func() {
+					accountPool <- account
+				}()
+				continue
+			}
+
+			triedAccounts = append(triedAccounts, accountName)
+
+			// Defer re-queueing the account for future use
+			defer func() {
+				accountPool <- account
+			}()
+
+			// 检查JWT是否需要刷新
+			if account.LicenseID != "" {
+				if account.JWT == "" || time.Now().After(account.ExpiryTime.Add(-JWTRefreshTime)) {
+					if err := refreshJetbrainsJWT(account); err != nil {
+						Error("Failed to refresh JWT for %s: %v", accountName, err)
+						RecordAccountPoolError()
+						lastError = fmt.Errorf("JWT refresh failed for %s: %v", accountName, err)
+						continue // Try next account
+					}
+				}
+			}
+
+			// 检查配额
+			if err := checkQuota(account); err != nil {
+				Error("Failed to check quota for %s: %v", accountName, err)
+				RecordAccountPoolError()
+				lastError = fmt.Errorf("quota check failed for %s: %v", accountName, err)
+				continue // Try next account
+			}
+
+			if account.HasQuota {
+				Info("Selected account %s with available quota", accountName)
+				return account, nil
+			} else {
+				Warn("Account %s is over quota, trying next account", accountName)
+				lastError = fmt.Errorf("account %s is over quota", accountName)
+				continue // Try next account
+			}
+
+		case <-time.After(30 * time.Second): // Reduced timeout for individual account checks
 			RecordAccountPoolError()
-			return nil, err // Return error to retry
+			lastError = fmt.Errorf("timed out waiting for an available JetBrains account")
+			break
 		}
-
-		if account.HasQuota {
-			return account, nil
-		}
-
-		return nil, fmt.Errorf("account %s is over quota", getTokenDisplayName(account))
-
-	case <-time.After(60 * time.Second): // 增加到60秒，给账户更多时间释放
-		RecordAccountPoolError()
-		return nil, fmt.Errorf("timed out waiting for an available JetBrains account")
 	}
+
+	// If we get here, all accounts were tried and none had quota
+	if lastError != nil {
+		return nil, fmt.Errorf("no accounts with available quota found after trying %d accounts: %v", maxRetries, lastError)
+	}
+	return nil, fmt.Errorf("no accounts with available quota found after trying all %d accounts", maxRetries)
 }
 
 // processQuotaData processes quota data and updates account status
