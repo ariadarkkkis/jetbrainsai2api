@@ -183,33 +183,33 @@ func GetMetricsString() string {
 		errorRate = float64(metrics.httpErrors) / float64(metrics.httpRequests) * 100
 	}
 
-	return fmt.Sprintf(`=== 性能指标统计 ===
-HTTP请求:
-- 总请求数: %d
-- 错误数: %d
-- 错误率: %.2f%%
-- 平均响应时间: %.2fms
+	return fmt.Sprintf(`=== Performance Statistics ===
+HTTP Requests:
+- Total Requests: %d
+- Errors: %d
+- Error Rate: %.2f%%
+- Average Response Time: %.2fms
 
-缓存性能:
-- 缓存命中: %d
-- 缓存未命中: %d
-- 命中率: %.2f%%
+Cache Performance:
+- Cache Hits: %d
+- Cache Misses: %d
+- Hit Rate: %.2f%%
 
-工具验证:
-- 验证次数: %d
-- 平均验证时间: %.2fms
+Tool Verification:
+- Verifications: %d
+- Average Verification Time: %.2fms
 
-账户管理:
-- 账户池等待次数: %d
-- 账户池错误次数: %d
+Account Management:
+- Account Pool Waits: %d
+- Account Pool Errors: %d
 
-系统资源:
-- 内存使用: %d MB
-- 协程数量: %d
+System Resources:
+- Memory Usage: %d MB
+- Number of Coroutines: %d
 
-当前窗口:
-- 窗口开始时间: %s
-- 窗口请求数: %d
+Current Window:
+- Window Start Time: %s
+- Window Requests: %d
 `,
 		metrics.httpRequests,
 		metrics.httpErrors,
@@ -267,10 +267,10 @@ func StartMetricsMonitor() {
 				}
 
 				// 在debug模式下输出性能指标
-				Debug("=== 性能监控报告 ===")
-				Debug("当前QPS: %.2f", GetQPS())
+				Debug("=== Performance Monitoring Report ===")
+				Debug("Current QPS: %.2f", GetQPS())
 				Debug("%s", GetMetricsString())
-				Debug("====================")
+				Debug("=====================")
 			case <-monitorCtx.Done():
 				// 收到停止信号，优雅退出监控 goroutine
 				return

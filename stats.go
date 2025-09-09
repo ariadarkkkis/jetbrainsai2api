@@ -61,7 +61,7 @@ func getStatsData(c *gin.Context) {
 				"total":      0.0,
 				"usageRate":  0.0,
 				"expiryDate": "",
-				"status":     "错误",
+				"status":     "Error",
 			})
 		} else {
 			tokensInfo = append(tokensInfo, gin.H{
@@ -88,11 +88,11 @@ func getStatsData(c *gin.Context) {
 		account := &jetbrainsAccounts[i]
 		expiryTime := account.ExpiryTime
 
-		status := "正常"
-		warning := "正常"
+		status := "Normal"
+		warning := "Normal"
 		if time.Now().Add(1 * time.Hour).After(expiryTime) {
-			status = "即将过期"
-			warning = "即将过期"
+			status = "About to expire"
+			warning = "About to expire"
 		}
 
 		expiryInfo = append(expiryInfo, gin.H{
@@ -283,7 +283,7 @@ func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
 	if err != nil {
 		return &TokenInfo{
 			Name:   getTokenDisplayName(account),
-			Status: "错误",
+			Status: "Error",
 		}, err
 	}
 
@@ -295,11 +295,11 @@ func getTokenInfoFromAccount(account *JetbrainsAccount) (*TokenInfo, error) {
 		usageRate = (dailyUsed / dailyTotal) * 100
 	}
 
-	status := "正常"
+	status := "Normal"
 	if !account.HasQuota {
-		status = "配额不足"
+		status = "Insufficient quota"
 	} else if time.Now().Add(24 * time.Hour).After(account.ExpiryTime) {
-		status = "即将过期"
+		status = "About to expire"
 	}
 
 	return &TokenInfo{
