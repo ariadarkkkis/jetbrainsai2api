@@ -120,10 +120,14 @@ func anthropicToJetbrainsTools(anthTools []AnthropicTool) []JetbrainsToolDefinit
 func callJetbrainsAPIDirect(anthReq *AnthropicMessagesRequest, jetbrainsMessages []JetbrainsMessage, data []JetbrainsData, account *JetbrainsAccount, startTime time.Time, accountIdentifier string) (*http.Response, int, error) {
 	internalModel := getInternalModelName(anthReq.Model)
 	payload := JetbrainsPayload{
-		Prompt:     "ij.chat.request.new-chat-on-start",
-		Profile:    internalModel,
-		Chat:       JetbrainsChat{Messages: jetbrainsMessages},
-		Parameters: JetbrainsParameters{Data: data},
+		Prompt:  "ij.chat.request.new-chat-on-start",
+		Profile: internalModel,
+		Chat:    JetbrainsChat{Messages: jetbrainsMessages},
+	}
+
+	// 只有当有数据时才设置 Parameters
+	if len(data) > 0 {
+		payload.Parameters = &JetbrainsParameters{Data: data}
 	}
 
 	payloadBytes, err := marshalJSON(payload)

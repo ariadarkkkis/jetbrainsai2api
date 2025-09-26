@@ -195,10 +195,10 @@ type JetbrainsFunctionCall struct {
 }
 
 type JetbrainsPayload struct {
-	Prompt     string              `json:"prompt"`
-	Profile    string              `json:"profile"`
-	Chat       JetbrainsChat       `json:"chat"`
-	Parameters JetbrainsParameters `json:"parameters"`
+	Prompt     string               `json:"prompt"`
+	Profile    string               `json:"profile"`
+	Chat       JetbrainsChat        `json:"chat"`
+	Parameters *JetbrainsParameters `json:"parameters,omitempty"`
 }
 
 type JetbrainsChat struct {

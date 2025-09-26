@@ -191,10 +191,14 @@ func chatCompletions(c *gin.Context) {
 
 	internalModel := getInternalModelName(request.Model)
 	payload := JetbrainsPayload{
-		Prompt:     "ij.chat.request.new-chat-on-start",
-		Profile:    internalModel,
-		Chat:       JetbrainsChat{Messages: jetbrainsMessages},
-		Parameters: JetbrainsParameters{Data: data},
+		Prompt:  "ij.chat.request.new-chat-on-start",
+		Profile: internalModel,
+		Chat:    JetbrainsChat{Messages: jetbrainsMessages},
+	}
+
+	// 只有当有数据时才设置 Parameters
+	if len(data) > 0 {
+		payload.Parameters = &JetbrainsParameters{Data: data}
 	}
 
 	payloadBytes, err := marshalJSON(payload)
