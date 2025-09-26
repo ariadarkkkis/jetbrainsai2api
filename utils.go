@@ -52,6 +52,11 @@ func recordFailureWithTimer(startTime time.Time, model, account string) {
 	recordRequest(false, time.Since(startTime).Milliseconds(), model, account)
 }
 
+// recordSuccess records a successful request with elapsed time
+func recordSuccess(startTime time.Time, model, account string) {
+	recordRequest(true, time.Since(startTime).Milliseconds(), model, account)
+}
+
 // parseEnvList parses comma-separated environment variable into trimmed slice
 func parseEnvList(envVar string) []string {
 	if envVar == "" {

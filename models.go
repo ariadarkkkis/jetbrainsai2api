@@ -1,6 +1,12 @@
 package main
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/bytedance/sonic"
+)
 
 // JetbrainsQuotaResponse defines the structure for the JetBrains quota API response
 type JetbrainsQuotaResponse struct {
@@ -208,4 +214,113 @@ type JetbrainsData struct {
 	FQDN     string `json:"fqdn,omitempty"`
 	Value    string `json:"value,omitempty"`
 	Modified int64  `json:"modified,omitempty"`
+}
+
+// Anthropic Messages API 数据结构
+type AnthropicMessage struct {
+	Role    string                 `json:"role"`
+	Content any                    `json:"content"`
+}
+
+type AnthropicContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+	// 工具调用字段 (tool_use 类型)
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
+	// 支持图像和其他内容类型
+	Source *AnthropicImageSource `json:"source,omitempty"`
+}
+
+type AnthropicImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	URL       string `json:"url,omitempty"`
+}
+
+// FlexibleString 支持字符串或数组形式的system字段
+type FlexibleString string
+
+// UnmarshalJSON 自定义JSON解析，支持字符串和数组格式
+func (fs *FlexibleString) UnmarshalJSON(data []byte) error {
+	// 尝试解析为字符串
+	var str string
+	if err := sonic.Unmarshal(data, &str); err == nil {
+		*fs = FlexibleString(str)
+		return nil
+	}
+
+	// 尝试解析为数组格式（某些客户端可能发送数组）
+	var arr []map[string]any
+	if err := sonic.Unmarshal(data, &arr); err == nil {
+		// 提取数组中的文本内容
+		var parts []string
+		for _, item := range arr {
+			if textVal, ok := item["text"]; ok {
+				if text, ok := textVal.(string); ok {
+					parts = append(parts, text)
+				}
+			} else if typeVal, ok := item["type"]; ok && typeVal == "text" {
+				if textVal, ok := item["content"]; ok {
+					if text, ok := textVal.(string); ok {
+						parts = append(parts, text)
+					}
+				}
+			}
+		}
+		*fs = FlexibleString(strings.Join(parts, ""))
+		return nil
+	}
+
+	return fmt.Errorf("invalid system field format")
+}
+
+type AnthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+type AnthropicMessagesRequest struct {
+	Model         string             `json:"model"`
+	MaxTokens     int                `json:"max_tokens"`
+	Messages      []AnthropicMessage `json:"messages"`
+	System        FlexibleString     `json:"system,omitempty"`
+	Temperature   *float64           `json:"temperature,omitempty"`
+	TopP          *float64           `json:"top_p,omitempty"`
+	TopK          *int               `json:"top_k,omitempty"`
+	Stream        *bool              `json:"stream,omitempty"`
+	StopSequences []string           `json:"stop_sequences,omitempty"`
+	Tools         []AnthropicTool    `json:"tools,omitempty"`
+	ToolChoice    any                `json:"tool_choice,omitempty"`
+}
+
+type AnthropicUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+type AnthropicMessagesResponse struct {
+	ID           string                  `json:"id"`
+	Type         string                  `json:"type"`
+	Role         string                  `json:"role"`
+	Content      []AnthropicContentBlock `json:"content"`
+	Model        string                  `json:"model"`
+	StopReason   string                  `json:"stop_reason,omitempty"`
+	StopSequence *string                 `json:"stop_sequence,omitempty"`
+	Usage        AnthropicUsage          `json:"usage"`
+}
+
+// 流式响应结构
+type AnthropicStreamResponse struct {
+	Type  string `json:"type"`
+	Index *int   `json:"index,omitempty"`
+	Delta *struct {
+		Type string `json:"type,omitempty"`
+		Text string `json:"text,omitempty"`
+	} `json:"delta,omitempty"`
+	Message *AnthropicMessagesResponse `json:"message,omitempty"`
+	Usage   *AnthropicUsage            `json:"usage,omitempty"`
 }

@@ -1,0 +1,361 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// anthropicToJetbrainsMessages 直接将 Anthropic 消息转换为 JetBrains 格式
+// KISS: 消除不必要的中间转换层
+// 根据 Anthropic 消息角色正确映射到 JetBrains 消息类型
+func anthropicToJetbrainsMessages(anthMessages []AnthropicMessage) []JetbrainsMessage {
+	var jetbrainsMessages []JetbrainsMessage
+
+	// 第一遍：建立工具 ID 到工具名称的映射
+	toolIDToName := make(map[string]string)
+	for _, msg := range anthMessages {
+		if msg.Role == "assistant" && hasToolUse(msg.Content) {
+			if contentArray, ok := msg.Content.([]any); ok {
+				for _, block := range contentArray {
+					if blockMap, ok := block.(map[string]any); ok {
+						if blockType, _ := blockMap["type"].(string); blockType == "tool_use" {
+							if id, ok := blockMap["id"].(string); ok {
+								if name, ok := blockMap["name"].(string); ok {
+									toolIDToName[id] = name
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 第二遍：转换消息
+	for _, msg := range anthMessages {
+		// 特殊处理：检查是否为包含 tool_result 的混合内容消息
+		if msg.Role == "user" && hasToolResult(msg.Content) {
+			// 提取并分别处理 tool_result 和常规文本内容
+			toolMessages, textContent := extractMixedContent(msg.Content, toolIDToName)
+
+			// 添加 tool_message
+			jetbrainsMessages = append(jetbrainsMessages, toolMessages...)
+
+			// 如果还有文本内容，添加为 user_message
+			if textContent != "" {
+				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+					Type:    "user_message",
+					Content: textContent,
+				})
+			}
+			continue
+		}
+
+		// 常规消息处理
+		var messageType string
+		switch msg.Role {
+		case "user":
+			messageType = "user_message"
+		case "assistant":
+			// 检查是否包含工具调用
+			if hasToolUse(msg.Content) {
+				messageType = "assistant_message_tool"
+			} else {
+				messageType = "assistant_message"
+			}
+		case "tool":
+			messageType = "tool_message"
+		default:
+			messageType = "user_message" // 默认为用户消息
+		}
+
+		jetbrainsMessage := JetbrainsMessage{
+			Type:    messageType,
+			Content: extractStringContent(msg.Content),
+		}
+
+		// 如果是工具相关消息，需要添加额外字段
+		if messageType == "assistant_message_tool" || messageType == "tool_message" {
+			// 从内容中提取工具信息
+			if toolInfo := extractToolInfo(msg.Content); toolInfo != nil {
+				jetbrainsMessage.ID = toolInfo.ID
+				jetbrainsMessage.ToolName = toolInfo.Name
+				if messageType == "tool_message" {
+					jetbrainsMessage.Result = toolInfo.Result
+					// tool_message 不需要 content 字段，只需要 result
+					jetbrainsMessage.Content = ""
+				}
+			}
+		}
+
+		jetbrainsMessages = append(jetbrainsMessages, jetbrainsMessage)
+	}
+
+	return jetbrainsMessages
+}
+
+// anthropicToJetbrainsTools 直接转换工具定义
+func anthropicToJetbrainsTools(anthTools []AnthropicTool) []JetbrainsToolDefinition {
+	var jetbrainsTools []JetbrainsToolDefinition
+
+	for _, tool := range anthTools {
+		jetbrainsTools = append(jetbrainsTools, JetbrainsToolDefinition{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters: JetbrainsToolParametersWrapper{
+				Schema: tool.InputSchema,
+			},
+		})
+	}
+
+	return jetbrainsTools
+}
+
+// callJetbrainsAPIDirect 直接调用 JetBrains API
+// KISS: 简化调用链，消除中间转换
+func callJetbrainsAPIDirect(anthReq *AnthropicMessagesRequest, jetbrainsMessages []JetbrainsMessage, data []JetbrainsData, account *JetbrainsAccount, startTime time.Time, accountIdentifier string) (*http.Response, int, error) {
+	internalModel := getInternalModelName(anthReq.Model)
+	payload := JetbrainsPayload{
+		Prompt:     "ij.chat.request.new-chat-on-start",
+		Profile:    internalModel,
+		Chat:       JetbrainsChat{Messages: jetbrainsMessages},
+		Parameters: JetbrainsParameters{Data: data},
+	}
+
+	payloadBytes, err := marshalJSON(payload)
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to marshal request")
+	}
+
+	Debug("=== JetBrains API Request Debug (Direct) ===")
+	Debug("Model: %s -> %s", anthReq.Model, internalModel)
+	Debug("Messages converted: %d", len(jetbrainsMessages))
+	Debug("Tools attached: %d", len(data))
+	Debug("Payload size: %d bytes", len(payloadBytes))
+	Debug("=== Complete Upstream Payload ===")
+	Debug("%s", string(payloadBytes))
+	Debug("=== End Upstream Payload ===")
+	Debug("=== End Debug ===")
+
+	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v8", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to create request")
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cache-Control", "no-cache")
+	setJetbrainsHeaders(req, account.JWT)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to make request")
+	}
+
+	Debug("JetBrains API Response Status: %d", resp.StatusCode)
+
+	if resp.StatusCode == 477 {
+		Warn("Account %s has no quota (received 477)", getTokenDisplayName(account))
+		account.HasQuota = false
+		account.LastQuotaCheck = float64(time.Now().Unix())
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		errorMsg := string(body)
+		Error("JetBrains API Error: Status %d, Body: %s", resp.StatusCode, errorMsg)
+
+		// 重新创建 response body reader，以便后续处理
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+
+		return resp, resp.StatusCode, fmt.Errorf("JetBrains API error: %d", resp.StatusCode)
+	}
+
+	return resp, http.StatusOK, nil
+}
+
+// extractStringContent 提取字符串内容 (KISS: 简单实用)
+func extractStringContent(content any) string {
+	switch v := content.(type) {
+	case string:
+		return v
+	case []any:
+		// 处理多块内容，提取文本
+		var textParts []string
+		for _, block := range v {
+			if blockMap, ok := block.(map[string]any); ok {
+				if blockType, _ := blockMap["type"].(string); blockType == "text" {
+					if text, _ := blockMap["text"].(string); text != "" {
+						textParts = append(textParts, text)
+					}
+				} else if blockType == "tool_use" {
+					// 对于工具使用，返回JSON格式的参数
+					if input, ok := blockMap["input"]; ok {
+						if inputJSON, err := marshalJSON(input); err == nil {
+							return string(inputJSON)
+						}
+					}
+				}
+			}
+		}
+		if len(textParts) > 0 {
+			return textParts[0] // 简化：只取第一段文本
+		}
+	}
+	return fmt.Sprintf("%v", content)
+}
+
+// hasToolUse 检查消息内容是否包含工具调用
+func hasToolUse(content any) bool {
+	if contentArray, ok := content.([]any); ok {
+		for _, block := range contentArray {
+			if blockMap, ok := block.(map[string]any); ok {
+				if blockType, _ := blockMap["type"].(string); blockType == "tool_use" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// hasToolResult 检查消息内容是否包含工具结果
+func hasToolResult(content any) bool {
+	if contentArray, ok := content.([]any); ok {
+		for _, block := range contentArray {
+			if blockMap, ok := block.(map[string]any); ok {
+				if blockType, _ := blockMap["type"].(string); blockType == "tool_result" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// extractMixedContent 从混合内容中分别提取工具结果和文本内容
+func extractMixedContent(content any, toolIDToName map[string]string) ([]JetbrainsMessage, string) {
+	var toolMessages []JetbrainsMessage
+	var textParts []string
+
+	if contentArray, ok := content.([]any); ok {
+		for _, block := range contentArray {
+			if blockMap, ok := block.(map[string]any); ok {
+				blockType, _ := blockMap["type"].(string)
+
+				if blockType == "tool_result" {
+					// 创建 tool_message
+					toolMsg := JetbrainsMessage{
+						Type:    "tool_message",
+						Content: "",
+					}
+
+					// 提取工具 ID
+					if toolUseID, ok := blockMap["tool_use_id"].(string); ok {
+						toolMsg.ID = toolUseID
+						// 从映射中获取工具名称
+						if toolName, exists := toolIDToName[toolUseID]; exists {
+							toolMsg.ToolName = toolName
+						} else {
+							toolMsg.ToolName = "Unknown"
+						}
+					}
+
+					// 提取工具结果
+					if result, ok := blockMap["content"]; ok {
+						if resultStr, ok := result.(string); ok {
+							toolMsg.Result = resultStr
+						} else if resultArray, ok := result.([]any); ok {
+							// 处理数组形式的 content
+							var resultParts []string
+							for _, part := range resultArray {
+								if partMap, ok := part.(map[string]any); ok {
+									if text, ok := partMap["text"].(string); ok {
+										resultParts = append(resultParts, text)
+									}
+								}
+							}
+							if len(resultParts) > 0 {
+								toolMsg.Result = strings.Join(resultParts, "")
+							}
+						} else {
+							toolMsg.Result = fmt.Sprintf("%v", result)
+						}
+					}
+
+					toolMessages = append(toolMessages, toolMsg)
+
+				} else if blockType == "text" {
+					// 提取文本内容
+					if text, ok := blockMap["text"].(string); ok && text != "" {
+						textParts = append(textParts, text)
+					}
+				}
+			}
+		}
+	}
+
+	textContent := strings.Join(textParts, " ")
+	return toolMessages, textContent
+}
+
+// ToolInfo 工具信息结构
+type ToolInfo struct {
+	ID     string
+	Name   string
+	Result string
+}
+
+// extractToolInfo 从消息内容中提取工具信息
+func extractToolInfo(content any) *ToolInfo {
+	if contentArray, ok := content.([]any); ok {
+		for _, block := range contentArray {
+			if blockMap, ok := block.(map[string]any); ok {
+				blockType, _ := blockMap["type"].(string)
+
+				if blockType == "tool_use" {
+					toolInfo := &ToolInfo{}
+					if id, ok := blockMap["id"].(string); ok {
+						toolInfo.ID = id
+					}
+					if name, ok := blockMap["name"].(string); ok {
+						toolInfo.Name = name
+					}
+					return toolInfo
+				} else if blockType == "tool_result" {
+					toolInfo := &ToolInfo{}
+					if id, ok := blockMap["tool_use_id"].(string); ok {
+						toolInfo.ID = id
+					}
+					// 从 tool_result 的 content 中提取结果
+					if result, ok := blockMap["content"]; ok {
+						if resultStr, ok := result.(string); ok {
+							toolInfo.Result = resultStr
+						} else if resultArray, ok := result.([]any); ok {
+							// 处理数组形式的 content
+							var resultParts []string
+							for _, part := range resultArray {
+								if partMap, ok := part.(map[string]any); ok {
+									if text, ok := partMap["text"].(string); ok {
+										resultParts = append(resultParts, text)
+									}
+								}
+							}
+							if len(resultParts) > 0 {
+								toolInfo.Result = strings.Join(resultParts, "")
+							}
+						} else {
+							toolInfo.Result = fmt.Sprintf("%v", result)
+						}
+					}
+					return toolInfo
+				}
+			}
+		}
+	}
+	return nil
+}

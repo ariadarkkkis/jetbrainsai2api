@@ -206,8 +206,12 @@ func chatCompletions(c *gin.Context) {
 
 	Debug("=== JetBrains API Request Debug ===")
 	Debug("Model: %s -> %s", request.Model, internalModel)
+	Debug("Messages processed: %d", len(jetbrainsMessages))
+	Debug("Tools processed: %d", len(request.Tools))
 	Debug("Payload size: %d bytes", len(payloadBytes))
-	Debug("Complete payload: %s", string(payloadBytes))
+	Debug("=== Complete Upstream Payload ===")
+	Debug("%s", string(payloadBytes))
+	Debug("=== End Upstream Payload ===")
 	Debug("=== End Debug ===")
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v8", bytes.NewBuffer(payloadBytes))
