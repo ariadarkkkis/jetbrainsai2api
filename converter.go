@@ -21,8 +21,6 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 
 	var jetbrainsMessages []JetbrainsMessage
 	for _, msg := range messages {
-		textContent := extractTextContent(msg.Content)
-
 		switch msg.Role {
 		case "user":
 			// Check for image content in user messages
@@ -32,6 +30,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 				if err := validator.ValidateImageData(mediaType, imageData); err != nil {
 					Warn("Image validation failed: %v", err)
 					// Continue with text content only if image validation fails
+					textContent := extractTextContent(msg.Content)
 					jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 						Type:    "user_message",
 						Content: textContent,
@@ -45,6 +44,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 					})
 
 					// Add text message if there's also text content
+					textContent := extractTextContent(msg.Content)
 					if textContent != "" {
 						jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 							Type:    "user_message",
@@ -53,12 +53,31 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 					}
 				}
 			} else {
-				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
-					Type:    "user_message",
-					Content: textContent,
-				})
+				// Handle multiple text content blocks separately
+				if contentArray, ok := msg.Content.([]any); ok {
+					for _, item := range contentArray {
+						if itemMap, ok := item.(map[string]any); ok {
+							if itemType, ok := itemMap["type"].(string); ok && itemType == "text" {
+								if text, ok := itemMap["text"].(string); ok && text != "" {
+									jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+										Type:    "user_message",
+										Content: text,
+									})
+								}
+							}
+						}
+					}
+				} else {
+					// Single text content
+					textContent := extractTextContent(msg.Content)
+					jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
+						Type:    "user_message",
+						Content: textContent,
+					})
+				}
 			}
 		case "system":
+			textContent := extractTextContent(msg.Content)
 			jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 				Type:    "system_message",
 				Content: textContent,
@@ -84,6 +103,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 				})
 			} else {
 				// V8 API: Use assistant_message_text for text responses
+				textContent := extractTextContent(msg.Content)
 				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 					Type:    "assistant_message_text",
 					Content: textContent,
@@ -93,6 +113,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 			functionName := toolIDToFuncNameMap[msg.ToolCallID]
 			if functionName != "" {
 				// V8 API: Use tool_message for tool results
+				textContent := extractTextContent(msg.Content)
 				jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 					Type:     "tool_message",
 					ID:       msg.ToolCallID,
@@ -103,6 +124,7 @@ func openAIToJetbrainsMessages(messages []ChatMessage) []JetbrainsMessage {
 				Warn("Cannot find function name for tool_call_id %s", msg.ToolCallID)
 			}
 		default:
+			textContent := extractTextContent(msg.Content)
 			jetbrainsMessages = append(jetbrainsMessages, JetbrainsMessage{
 				Type:    "user_message",
 				Content: textContent,
