@@ -191,10 +191,14 @@ func chatCompletions(c *gin.Context) {
 
 	internalModel := getInternalModelName(request.Model)
 	payload := JetbrainsPayload{
-		Prompt:     "ij.chat.request.new-chat-on-start",
-		Profile:    internalModel,
-		Chat:       JetbrainsChat{Messages: jetbrainsMessages},
-		Parameters: JetbrainsParameters{Data: data},
+		Prompt:  "ij.chat.request.new-chat-on-start",
+		Profile: internalModel,
+		Chat:    JetbrainsChat{Messages: jetbrainsMessages},
+	}
+
+	// 只有当有数据时才设置 Parameters
+	if len(data) > 0 {
+		payload.Parameters = &JetbrainsParameters{Data: data}
 	}
 
 	payloadBytes, err := marshalJSON(payload)
@@ -206,8 +210,12 @@ func chatCompletions(c *gin.Context) {
 
 	Debug("=== JetBrains API Request Debug ===")
 	Debug("Model: %s -> %s", request.Model, internalModel)
+	Debug("Messages processed: %d", len(jetbrainsMessages))
+	Debug("Tools processed: %d", len(request.Tools))
 	Debug("Payload size: %d bytes", len(payloadBytes))
-	Debug("Complete payload: %s", string(payloadBytes))
+	Debug("=== Complete Upstream Payload ===")
+	Debug("%s", string(payloadBytes))
+	Debug("=== End Upstream Payload ===")
 	Debug("=== End Debug ===")
 
 	req, err := http.NewRequest("POST", "https://api.jetbrains.ai/user/v5/llm/chat/stream/v8", bytes.NewBuffer(payloadBytes))

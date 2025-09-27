@@ -42,16 +42,16 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 	}
 	validationCacheMutex.RUnlock()
 
-	Debug("=== TOOL VALIDATION DEBUG START ===")
-	Debug("Original tools count: %d", len(tools))
-	for i, tool := range tools {
-		Debug("Original tool %d: %s", i, toJSONString(tool))
-	}
+	// Debug("=== TOOL VALIDATION DEBUG START ===")
+	// Debug("Original tools count: %d", len(tools))
+	// for i, tool := range tools {
+	// Debug("Original tool %d: %s", i, toJSONString(tool))
+	// }
 
 	validatedTools := make([]Tool, 0, len(tools))
 
-	for i, tool := range tools {
-		Debug("Processing tool %d: %s", i, tool.Function.Name)
+	for _, tool := range tools {
+		// Debug("Processing tool %d: %s", i, tool.Function.Name)
 
 		// 验证工具名称
 		if !isValidParamName(tool.Function.Name) {
@@ -60,13 +60,13 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 		}
 
 		// 验证和转换参数
-		Debug("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
+		// Debug("Original parameters for %s: %s", tool.Function.Name, toJSONString(tool.Function.Parameters))
 		transformedParams, err := transformParameters(tool.Function.Parameters)
 		if err != nil {
 			Debug("Failed to transform tool %s parameters: %v", tool.Function.Name, err)
 			continue
 		}
-		Debug("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
+		// Debug("Transformed parameters for %s: %s", tool.Function.Name, toJSONString(transformedParams))
 
 		// 创建新的工具对象
 		validatedTool := Tool{
@@ -79,12 +79,12 @@ func validateAndTransformTools(tools []Tool) ([]Tool, error) {
 		}
 
 		validatedTools = append(validatedTools, validatedTool)
-		Debug("Successfully validated tool: %s", tool.Function.Name)
+		// Debug("Successfully validated tool: %s", tool.Function.Name)
 	}
 
-	Debug("Final validated tools count: %d", len(validatedTools))
-	Debug("Final validated tools: %s", toJSONString(validatedTools))
-	Debug("=== TOOL VALIDATION DEBUG END ===")
+	// Debug("Final validated tools count: %d", len(validatedTools))
+	// Debug("Final validated tools: %s", toJSONString(validatedTools))
+	// Debug("=== TOOL VALIDATION DEBUG END ===")
 
 	// 缓存验证结果
 	validationCacheMutex.Lock()
@@ -160,11 +160,11 @@ func transformParameters(params map[string]any) (map[string]any, error) {
 	// Transform properties
 	if properties, ok := params["properties"].(map[string]any); ok {
 		propCount := len(properties)
-		Debug("Processing %d properties for parameter transformation", propCount)
+		// Debug("Processing %d properties for parameter transformation", propCount)
 
 		// If there are too many properties, we need to be more aggressive about simplification
 		if propCount > 15 { // Raised threshold from 10 to 15 for edge cases
-			Debug("Tool has %d properties (>15), applying EXTREME simplification for tool usage guarantee", propCount)
+			// Debug("Tool has %d properties (>15), applying EXTREME simplification for tool usage guarantee", propCount)
 			// EXTREME SIMPLIFICATION: For very complex tools, convert to single string parameter
 			// BUT also provide some original parameters to satisfy validation
 			resultProps := map[string]any{

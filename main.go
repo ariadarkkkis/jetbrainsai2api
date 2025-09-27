@@ -38,8 +38,13 @@ var (
 func main() {
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
-		Info("No .env file found, using system environment variables")
+		// 此时日志系统还没初始化，使用标准日志
+		println("No .env file found, using system environment variables")
 	}
+
+	// 在加载环境变量后初始化日志系统
+	InitializeLogger()
+	Info("Logger initialized with environment configuration")
 
 	// Initialize storage and load statistics
 	if err := initStorage(); err != nil {
@@ -106,6 +111,7 @@ func setupGracefulShutdown() {
 		<-c
 		Info("Shutdown signal received, saving statistics before exiting...")
 		saveStats()
+		CloseLogger()
 		os.Exit(0)
 	}()
 }

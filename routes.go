@@ -72,6 +72,8 @@ func setupAPIRoutes(r *gin.Engine) {
 	{
 		api.GET("/models", listModels)
 		api.POST("/chat/completions", chatCompletions)
+		// 新增 Anthropic Messages API 端点 (OCP: 开放扩展)
+		api.POST("/messages", anthropicMessages)
 	}
 }
 

@@ -15,12 +15,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// generateShortToolCallID generates a tool call ID that fits JetBrains 40-char limit
+// generateShortToolCallID generates a tool call ID in Anthropic format (toolu_xxx)
 func generateShortToolCallID() string {
-	// Generate 16 random bytes and encode as hex (32 chars) + "call_" prefix (5 chars) = 37 chars total
-	bytes := make([]byte, 16)
+	// Generate 10 random bytes and encode as hex (20 chars) + "toolu_" prefix (6 chars) = 26 chars total
+	// Anthropic format: toolu_01G4sznjWs4orN79KqRAsQ5E (typically 22-26 chars)
+	bytes := make([]byte, 10)
 	rand.Read(bytes)
-	return fmt.Sprintf("call_%s", hex.EncodeToString(bytes))
+	return fmt.Sprintf("toolu_%s", hex.EncodeToString(bytes))
 }
 
 // processJetbrainsStream processes the event stream from the JetBrains API.
@@ -92,20 +93,23 @@ func handleStreamingResponse(c *gin.Context, resp *http.Response, request ChatCo
 			fmt.Fprintf(c.Writer, "data: %s\n\n", string(respJSON))
 			c.Writer.Flush()
 		case "ToolCall":
-			// 处理新的ToolCall格式
-			if name, ok := data["name"].(string); ok && name != "" {
-				// 开始新的工具调用
-				currentTool = &map[string]any{
-					"index": 0,
-					"id":    generateShortToolCallID(),
-					"function": map[string]any{
-						"arguments": "",
-						"name":      name,
-					},
-					"type": "function",
+			// 处理新的ToolCall格式 - 使用上游提供的ID
+			if upstreamID, ok := data["id"].(string); ok && upstreamID != "" {
+				// 开始新的工具调用 - 使用上游提供的ID
+				if name, ok := data["name"].(string); ok && name != "" {
+					currentTool = &map[string]any{
+						"index": 0,
+						"id":    upstreamID, // 使用上游提供的ID
+						"function": map[string]any{
+							"arguments": "",
+							"name":      name,
+						},
+						"type": "function",
+					}
+					Debug("Started new tool call with upstream ID: %s, name: %s", upstreamID, name)
 				}
 			} else if currentTool != nil {
-				// 累积参数内容
+				// 累积参数内容 (当ID为null时)
 				if content, ok := data["content"].(string); ok {
 					if funcMap, ok := (*currentTool)["function"].(map[string]any); ok {
 						currentArgs, _ := funcMap["arguments"].(string)
@@ -204,14 +208,32 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 				contentBuilder.WriteString(content)
 			}
 		case "ToolCall":
-			// 处理新的ToolCall格式
-			if name, ok := data["name"].(string); ok && name != "" {
-				// 开始新的工具调用
-				currentFuncName = name
-				currentFuncArgs = ""
+			// 处理新的ToolCall格式 - 使用上游提供的ID
+			if upstreamID, ok := data["id"].(string); ok && upstreamID != "" {
+				// 开始新的工具调用 - 记录上游ID
+				if name, ok := data["name"].(string); ok && name != "" {
+					currentFuncName = name
+					currentFuncArgs = ""
+					// 存储上游ID供后续使用
+					if len(toolCalls) == 0 {
+						toolCalls = append(toolCalls, ToolCall{
+							ID:   upstreamID, // 使用上游提供的ID
+							Type: "function",
+							Function: Function{
+								Name:      name,
+								Arguments: "",
+							},
+						})
+					}
+					Debug("Started new tool call with upstream ID: %s, name: %s", upstreamID, name)
+				}
 			} else if content, ok := data["content"].(string); ok {
-				// 累积参数内容
+				// 累积参数内容 (当ID为null时)
 				currentFuncArgs += content
+				// 更新toolCalls中的参数
+				if len(toolCalls) > 0 {
+					toolCalls[len(toolCalls)-1].Function.Arguments += content
+				}
 			}
 		case "FunctionCall":
 			funcNameInterface := data["name"]
@@ -230,23 +252,26 @@ func handleNonStreamingResponse(c *gin.Context, resp *http.Response, request Cha
 			}
 			currentFuncArgs += funcArgs
 		case "FinishMetadata":
-			if currentFuncName != "" {
+			// 完成工具调用参数收集 - toolCalls已在ToolCall事件中创建
+			if len(toolCalls) > 0 {
+				// 验证最后一个工具调用
+				lastToolCall := &toolCalls[len(toolCalls)-1]
+				if err := validateToolCallResponse(*lastToolCall); err != nil {
+					Warn("Invalid tool call response: %v", err)
+				}
+				Debug("Completed tool call with ID: %s, args: %s", lastToolCall.ID, lastToolCall.Function.Arguments)
+			} else if currentFuncName != "" {
+				// 后备方案：如果没有通过ToolCall事件创建，则创建一个
 				toolCall := ToolCall{
-					ID:   generateShortToolCallID(),
+					ID:   generateShortToolCallID(), // 后备方案
 					Type: "function",
 					Function: Function{
 						Name:      currentFuncName,
 						Arguments: currentFuncArgs,
 					},
 				}
-
-				// Validate the tool call before adding it
-				if err := validateToolCallResponse(toolCall); err != nil {
-					Warn("Invalid tool call response: %v", err)
-					// Still add it but log the issue
-				}
-
 				toolCalls = append(toolCalls, toolCall)
+				Warn("Used fallback tool ID generation for: %s", currentFuncName)
 			}
 			return false // Stop processing
 		}
