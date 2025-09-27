@@ -28,10 +28,10 @@ type Logger interface {
 }
 
 type AppLogger struct {
-	logger   *log.Logger
-	debug    bool
-	fileHandle *os.File  // 可能为nil
-	mu       sync.RWMutex // 保护文件句柄操作
+	logger     *log.Logger
+	debug      bool
+	fileHandle *os.File     // 可能为nil
+	mu         sync.RWMutex // 保护文件句柄操作
 }
 
 func NewAppLogger() *AppLogger {
@@ -123,22 +123,32 @@ func CloseLogger() error {
 
 // 全局日志函数 - 自动初始化保护
 func Debug(format string, args ...any) {
-	if appLogger == nil { InitializeLogger() }
+	if appLogger == nil {
+		InitializeLogger()
+	}
 	appLogger.Debug(format, args...)
 }
-func Info(format string, args ...any)  {
-	if appLogger == nil { InitializeLogger() }
+func Info(format string, args ...any) {
+	if appLogger == nil {
+		InitializeLogger()
+	}
 	appLogger.Info(format, args...)
 }
-func Warn(format string, args ...any)  {
-	if appLogger == nil { InitializeLogger() }
+func Warn(format string, args ...any) {
+	if appLogger == nil {
+		InitializeLogger()
+	}
 	appLogger.Warn(format, args...)
 }
 func Error(format string, args ...any) {
-	if appLogger == nil { InitializeLogger() }
+	if appLogger == nil {
+		InitializeLogger()
+	}
 	appLogger.Error(format, args...)
 }
 func Fatal(format string, args ...any) {
-	if appLogger == nil { InitializeLogger() }
+	if appLogger == nil {
+		InitializeLogger()
+	}
 	appLogger.Fatal(format, args...)
 }

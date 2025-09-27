@@ -218,8 +218,8 @@ type JetbrainsData struct {
 
 // Anthropic Messages API 数据结构
 type AnthropicMessage struct {
-	Role    string                 `json:"role"`
-	Content any                    `json:"content"`
+	Role    string `json:"role"`
+	Content any    `json:"content"`
 }
 
 type AnthropicContentBlock struct {

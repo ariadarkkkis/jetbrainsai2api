@@ -138,7 +138,7 @@ func anthropicMessages(c *gin.Context) {
 // SRP: 专门处理错误响应格式
 func respondWithAnthropicError(c *gin.Context, statusCode int, errorType, message string) {
 	errorResp := gin.H{
-		"type":  "error",
+		"type": "error",
 		"error": gin.H{
 			"type":    errorType,
 			"message": message,

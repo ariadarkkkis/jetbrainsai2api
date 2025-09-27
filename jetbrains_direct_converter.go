@@ -92,9 +92,9 @@ func parseJetbrainsStreamToAnthropic(bodyStr, model string) (*AnthropicMessagesR
 					// 开始新的工具调用
 					if name, ok := streamData["name"].(string); ok && name != "" {
 						currentToolCall = &AnthropicContentBlock{
-							Type: "tool_use",
-							ID:   upstreamID,
-							Name: name,
+							Type:  "tool_use",
+							ID:    upstreamID,
+							Name:  name,
 							Input: make(map[string]any),
 						}
 						Debug("Started tool call: id=%s, name=%s", upstreamID, name)
